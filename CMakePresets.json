@@ -11,40 +11,54 @@
       "hidden": true,
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "BUILD_TESTING": "ON",
+        "SVG_EDITOR_ENABLE_WARNINGS": "ON",
+        "SVG_EDITOR_ENABLE_CLANG_TIDY": "ON"
+      }
+    },
+    {
+      "name": "windows-ucrt64",
+      "hidden": true,
+      "inherits": "base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
       "environment": {
         "PATH": "C:/msys64/ucrt64/bin;C:/msys64/usr/bin;$penv{PATH}",
         "Qt6_ROOT": "C:/msys64/ucrt64",
         "Qt6_DIR": "C:/msys64/ucrt64/lib/cmake/Qt6"
       },
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "BUILD_TESTING": "ON",
-        "SVG_EDITOR_ENABLE_WARNINGS": "ON",
-        "SVG_EDITOR_ENABLE_CLANG_TIDY": "ON",
         "CMAKE_CXX_COMPILER": "C:/msys64/ucrt64/bin/g++.exe",
         "CMAKE_PREFIX_PATH": "C:/msys64/ucrt64"
       }
     },
     {
-      "name": "windows-ucrt64-debug",
-      "displayName": "Windows UCRT64 Debug",
+      "name": "base-unix",
+      "hidden": true,
       "inherits": "base",
       "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Windows"
+        "type": "anyOf",
+        "conditions": [
+          { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
+          { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
+        ]
       }
+    },
+    {
+      "name": "windows-ucrt64-debug",
+      "displayName": "Windows UCRT64 Debug",
+      "inherits": "windows-ucrt64"
     },
     {
       "name": "windows-ucrt64-release",
       "displayName": "Windows UCRT64 Release",
-      "inherits": "base",
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Windows"
-      },
+      "inherits": "windows-ucrt64",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
@@ -52,11 +66,35 @@
     {
       "name": "linux-debug",
       "displayName": "Linux Debug",
-      "inherits": "base",
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Linux"
+      "inherits": "base-unix",
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "/usr"
+      }
+    },
+    {
+      "name": "linux-release",
+      "displayName": "Linux Release",
+      "inherits": "base-unix",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_PREFIX_PATH": "/usr"
+      }
+    },
+    {
+      "name": "darwin-debug",
+      "displayName": "macOS Debug",
+      "inherits": "base-unix",
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "/opt/homebrew/opt/qt;/usr/local/opt/qt;$penv{CMAKE_PREFIX_PATH}"
+      }
+    },
+    {
+      "name": "darwin-release",
+      "displayName": "macOS Release",
+      "inherits": "base-unix",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_PREFIX_PATH": "/opt/homebrew/opt/qt;/usr/local/opt/qt;$penv{CMAKE_PREFIX_PATH}"
       }
     }
   ],
@@ -72,6 +110,18 @@
     {
       "name": "build-linux-debug",
       "configurePreset": "linux-debug"
+    },
+    {
+      "name": "build-linux-release",
+      "configurePreset": "linux-release"
+    },
+    {
+      "name": "build-darwin-debug",
+      "configurePreset": "darwin-debug"
+    },
+    {
+      "name": "build-darwin-release",
+      "configurePreset": "darwin-release"
     }
   ],
   "testPresets": [
@@ -85,6 +135,13 @@
     {
       "name": "test-linux-debug",
       "configurePreset": "linux-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "test-darwin-debug",
+      "configurePreset": "darwin-debug",
       "output": {
         "outputOnFailure": true
       }

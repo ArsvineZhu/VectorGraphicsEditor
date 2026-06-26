@@ -118,11 +118,16 @@ void MainWindow::setupUi() {
     setCentralWidget(m_canvasView);
 
     m_propertyPanel = new PropertyPanel(this);
+    m_propertyPanel->setMinimumWidth(300);
     m_propertyDock = new QDockWidget(this);
+    m_propertyDock->setObjectName("propertyDock");
+    m_propertyDock->setMinimumWidth(320);
     // 属性面板允许左右停靠
     m_propertyDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
     m_propertyDock->setWidget(m_propertyPanel);
     addDockWidget(Qt::RightDockWidgetArea, m_propertyDock);
+    resizeDocks({m_propertyDock}, {340}, Qt::Horizontal);
+    m_togglePropertyDockAction = m_propertyDock->toggleViewAction();
 
     m_tutorialDialog = new TutorialDialog(this);
 }
@@ -176,11 +181,23 @@ void MainWindow::setupMenus() {
     m_editMenu->addAction(m_deleteAction);
     m_editMenu->addAction(m_clearAction);
 
-    // Tools 菜单从工具 ActionGroup 批量添加（顺序由 createToolAction 调用顺序决定）
     m_toolMenu = menuBar()->addMenu(QString());
-    for (QAction* action : m_toolActionGroup->actions()) {
-        m_toolMenu->addAction(action);
-    }
+    m_selectionToolMenu = m_toolMenu->addMenu(QString());
+    m_selectionToolMenu->addAction(findToolAction(CanvasView::Tool::Select));
+
+    m_openShapeToolMenu = m_toolMenu->addMenu(QString());
+    m_openShapeToolMenu->addAction(findToolAction(CanvasView::Tool::Point));
+    m_openShapeToolMenu->addAction(findToolAction(CanvasView::Tool::Line));
+    m_openShapeToolMenu->addAction(findToolAction(CanvasView::Tool::Polyline));
+
+    m_closedShapeToolMenu = m_toolMenu->addMenu(QString());
+    m_closedShapeToolMenu->addAction(findToolAction(CanvasView::Tool::Circle));
+    m_closedShapeToolMenu->addAction(findToolAction(CanvasView::Tool::Ellipse));
+    m_closedShapeToolMenu->addAction(findToolAction(CanvasView::Tool::Rectangle));
+    m_closedShapeToolMenu->addAction(findToolAction(CanvasView::Tool::Polygon));
+
+    m_panelToolMenu = m_toolMenu->addMenu(QString());
+    m_panelToolMenu->addAction(m_togglePropertyDockAction);
 
     // Tutorial 菜单标题在英文 / 中文下都保留 "Tutorial"（与 HTML 手册保持一致）
     m_tutorialMenu = menuBar()->addMenu("Tutorial");
@@ -195,11 +212,13 @@ void MainWindow::setupToolbar() {
     m_toolBar = addToolBar(QString());
     m_toolBar->setMovable(false);
 
-    // 8 个工具按钮（顺序与 Tools 菜单一致）
+    // 顶层工具栏按类别分段：选择 -> 开放图形 -> 封闭图形 -> 编辑 -> 文件 -> 面板
     m_toolBar->addAction(createToolAction(CanvasView::Tool::Select));
+    m_toolBar->addSeparator();
     m_toolBar->addAction(createToolAction(CanvasView::Tool::Point));
     m_toolBar->addAction(createToolAction(CanvasView::Tool::Line));
     m_toolBar->addAction(createToolAction(CanvasView::Tool::Polyline));
+    m_toolBar->addSeparator();
     m_toolBar->addAction(createToolAction(CanvasView::Tool::Circle));
     m_toolBar->addAction(createToolAction(CanvasView::Tool::Ellipse));
     m_toolBar->addAction(createToolAction(CanvasView::Tool::Rectangle));
@@ -212,6 +231,8 @@ void MainWindow::setupToolbar() {
     m_toolBar->addAction(m_openAction);
     m_toolBar->addAction(m_saveAction);
     m_toolBar->addAction(m_clearAction);
+    m_toolBar->addSeparator();
+    m_toolBar->addAction(m_togglePropertyDockAction);
 
     // 默认选中 Select 工具（ActionGroup 内的第一个）
     if (!m_toolActionGroup->actions().isEmpty()) {
@@ -266,6 +287,10 @@ void MainWindow::retranslateUi() {
     m_fileMenu->setTitle(textForLanguage(m_language, "File", "文件"));
     m_editMenu->setTitle(textForLanguage(m_language, "Edit", "编辑"));
     m_toolMenu->setTitle(textForLanguage(m_language, "Tools", "工具"));
+    m_selectionToolMenu->setTitle(textForLanguage(m_language, "Selection", "选择工具"));
+    m_openShapeToolMenu->setTitle(textForLanguage(m_language, "Open Shapes", "开放图形"));
+    m_closedShapeToolMenu->setTitle(textForLanguage(m_language, "Closed Shapes", "封闭图形"));
+    m_panelToolMenu->setTitle(textForLanguage(m_language, "Panels", "面板"));
     // Tutorial 标题保持原样（与 HTML 手册标题一致）
     m_tutorialMenu->setTitle("Tutorial");
     m_languageMenu->setTitle(textForLanguage(m_language, "Language", "语言"));
@@ -280,6 +305,9 @@ void MainWindow::retranslateUi() {
     m_pasteAction->setText(textForLanguage(m_language, "Paste", "粘贴"));
     m_clearAction->setText(textForLanguage(m_language, "Clear Canvas", "清空画布"));
     m_showTutorialAction->setText(textForLanguage(m_language, "Operation Manual", "操作手册"));
+    if (m_togglePropertyDockAction != nullptr) {
+        m_togglePropertyDockAction->setText(textForLanguage(m_language, "Properties Panel", "属性面板"));
+    }
     m_englishAction->setText("English");
     m_simplifiedChineseAction->setText(QString::fromUtf8("简体中文"));
 
@@ -317,6 +345,16 @@ QAction* MainWindow::createToolAction(CanvasView::Tool tool) {
     connect(action, &QAction::triggered, this, [this, tool]() { m_canvasView->setTool(tool); });
 
     return action;
+}
+
+QAction* MainWindow::findToolAction(CanvasView::Tool tool) const {
+    for (QAction* action : m_toolActionGroup->actions()) {
+        if (action != nullptr && action->data().toInt() == static_cast<int>(tool)) {
+            return action;
+        }
+    }
+
+    return nullptr;
 }
 
 bool MainWindow::saveToPath(const QString& filePath) {

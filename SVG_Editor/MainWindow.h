@@ -78,6 +78,11 @@ class MainWindow : public QMainWindow {
     /// @return 新建的 QAction（生命周期由 this 接管）
     QAction* createToolAction(CanvasView::Tool tool);
 
+    /// @brief 按 Tool 枚举从工具 ActionGroup 中回查对应 QAction。
+    /// @param tool 工具枚举
+    /// @return 找到则返回 QAction，否则返回 nullptr
+    QAction* findToolAction(CanvasView::Tool tool) const;
+
     /// @brief 文件写入的统一入口（被 saveDocument / saveDocumentAs 调用）。
     /// @param filePath 目标文件
     /// @return true 表示成功
@@ -113,6 +118,14 @@ class MainWindow : public QMainWindow {
     QMenu* m_editMenu = nullptr;
     /// @brief Tools 菜单
     QMenu* m_toolMenu = nullptr;
+    /// @brief Tools → Selection
+    QMenu* m_selectionToolMenu = nullptr;
+    /// @brief Tools → Open Shapes
+    QMenu* m_openShapeToolMenu = nullptr;
+    /// @brief Tools → Closed Shapes
+    QMenu* m_closedShapeToolMenu = nullptr;
+    /// @brief Tools → Panels
+    QMenu* m_panelToolMenu = nullptr;
     /// @brief Tutorial 菜单
     QMenu* m_tutorialMenu = nullptr;
     /// @brief Tutorial 菜单下的语言子菜单
@@ -138,6 +151,8 @@ class MainWindow : public QMainWindow {
     QAction* m_clearAction = nullptr;
     /// @brief Tutorial → Operation Manual
     QAction* m_showTutorialAction = nullptr;
+    /// @brief Tools → Show/Hide Properties（来自 QDockWidget::toggleViewAction）
+    QAction* m_togglePropertyDockAction = nullptr;
     /// @brief Language → English
     QAction* m_englishAction = nullptr;
     /// @brief Language → 简体中文
