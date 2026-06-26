@@ -1,6 +1,19 @@
 #include <QtTest>
 
+#include <cmath>
+
+#include "SelectionFrame.h"
 #include "ShapeData.h"
+
+namespace {
+
+constexpr qreal kTolerance = 0.0001;
+
+bool pointsNear(const QPointF& lhs, const QPointF& rhs) {
+    return std::abs(lhs.x() - rhs.x()) < kTolerance && std::abs(lhs.y() - rhs.y()) < kTolerance;
+}
+
+} // namespace
 
 class ShapeDataTests : public QObject {
     Q_OBJECT
@@ -10,6 +23,9 @@ class ShapeDataTests : public QObject {
     void polylineTranslationMovesEveryPoint();
     void applyTransformComposesOntoShapeData();
     void missingTransformOrStrokeEnabledFailsToDeserialize();
+    void selectionFrameFollowsAffineRotation();
+    void selectionFrameTranslationMovesAllCorners();
+    void selectionFrameRotateHandleUsesTopNormal();
 };
 
 void ShapeDataTests::circleSerializationRoundTrip() {
@@ -82,6 +98,47 @@ void ShapeDataTests::missingTransformOrStrokeEnabledFailsToDeserialize() {
     json = shapeDataToJson(source);
     json.remove("strokeEnabled");
     QVERIFY(!shapeDataFromJson(json).has_value());
+}
+
+void ShapeDataTests::selectionFrameFollowsAffineRotation() {
+    const SelectionFrame frame = SelectionFrame::fromRect(QRectF(10.0, 20.0, 40.0, 20.0));
+
+    QTransform transform;
+    transform.translate(30.0, 50.0);
+    transform.rotate(90.0);
+
+    const SelectionFrame rotated = frame.mapped(transform);
+    QVERIFY(pointsNear(rotated.topLeft, transform.map(frame.topLeft)));
+    QVERIFY(pointsNear(rotated.topRight(), transform.map(frame.topRight())));
+    QVERIFY(pointsNear(rotated.bottomLeft(), transform.map(frame.bottomLeft())));
+    QVERIFY(pointsNear(rotated.bottomRight(), transform.map(frame.bottomRight())));
+}
+
+void ShapeDataTests::selectionFrameTranslationMovesAllCorners() {
+    const SelectionFrame source = SelectionFrame::fromRect(QRectF(5.0, 8.0, 20.0, 10.0));
+    const QPointF delta(12.0, -7.0);
+    const SelectionFrame moved = source.translated(delta);
+
+    QCOMPARE(moved.topLeft, source.topLeft + delta);
+    QCOMPARE(moved.topRight(), source.topRight() + delta);
+    QCOMPARE(moved.bottomLeft(), source.bottomLeft() + delta);
+    QCOMPARE(moved.center(), source.center() + delta);
+}
+
+void ShapeDataTests::selectionFrameRotateHandleUsesTopNormal() {
+    SelectionFrame frame = SelectionFrame::fromRect(QRectF(0.0, 0.0, 40.0, 20.0));
+
+    QTransform transform;
+    transform.rotate(90.0);
+    frame = frame.mapped(transform);
+
+    const QPointF topCenter = frame.topCenter();
+    const QPointF normal = frame.topNormal();
+    const QPointF rotateHandle = topCenter + normal * 26.0;
+    const QPointF delta = rotateHandle - topCenter;
+    const qreal projection = delta.x() * normal.x() + delta.y() * normal.y();
+
+    QVERIFY(std::abs(projection - 26.0) < kTolerance);
 }
 
 QTEST_APPLESS_MAIN(ShapeDataTests)

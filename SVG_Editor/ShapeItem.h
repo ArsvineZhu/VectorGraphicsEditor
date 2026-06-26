@@ -8,8 +8,8 @@
 //          - 通过自定义 `Type = UserType + 1` 让 `qgraphicsitem_cast<ShapeItem*>`
 //            能从场景 items 中精确识别出本类实例。
 // @layer   graphics
-// @warning 私有成员 `m_committingMove` 用来抑制"提交位移 → 触发 mouseReleaseEvent
-//          → 再次提交"的递归，调用 `setPos()` 前后必须保持其值一致。
+// @warning ShapeItem 不再使用 Qt 的 `ItemIsMovable` 临时位移；几何变换统一
+//          通过 `ShapeData::transform` 持久化，由 CanvasView 协调拖动 / 缩放 / 旋转。
 // =====================================================================
 
 #pragma once
@@ -20,7 +20,7 @@
 
 #include "ShapeData.h"
 
-/// @brief 在 QGraphicsScene 中代表一个 ShapeData 的可渲染、可选中、可移动对象。
+/// @brief 在 QGraphicsScene 中代表一个 ShapeData 的可渲染、可选中对象。
 class ShapeItem : public QGraphicsObject {
     Q_OBJECT
 
@@ -55,27 +55,23 @@ class ShapeItem : public QGraphicsObject {
     /// @brief 开启/关闭"预览模式"：用于拖拽创建过程中的实时反馈。
     /// @details 预览模式下：
     ///          - 不可被选中（ItemIsSelectable = false）
-    ///          - 不可被拖动（ItemIsMovable = false）
+    ///          - 不参与选择态交互
     ///          - 描边色变浅 + 改为虚线
     void setPreviewMode(bool enabled);
 
     /// @brief 控制是否绘制 item 自带的选中虚线框。
     void setSelectionDecorationVisible(bool visible);
 
-    /// @brief 是否存在尚未写回 ShapeData 的 scene 位移。
-    bool hasPendingMoveOffset() const;
+    /// @brief 返回未应用 transform 的本地真实几何包围盒，供单选 frame 初始化使用。
+    QRectF localGeometryBounds() const;
 
-    /// @brief 把当前 pos() 累积位移写回 ShapeData。
-    void commitPendingMoveOffset();
+    /// @brief 返回未应用 transform 的本地交互包围盒，供命中相关逻辑使用。
+    QRectF localSelectionBounds() const;
 
   signals:
     /// @brief 当用户拖动结束后发出（含选中图形的位移提交）。
     /// @param item 发生变化的 ShapeItem 自身
     void shapeChanged(ShapeItem* item);
-
-  protected:
-    /// @brief 重写以在拖动结束后检测到实际位移时提交到 ShapeData 并 emit 信号。
-    void mouseReleaseEvent(QGraphicsSceneMouseEvent* event) override;
 
   private:
     /// @brief 根据 m_data 与 m_previewMode 构造用于绘制 / 命中测试的路径。
@@ -84,12 +80,11 @@ class ShapeItem : public QGraphicsObject {
     /// @brief 构造未应用 transform 的基础几何路径。
     QPainterPath buildBasePath() const;
 
+    /// @brief 基于给定 path 计算命中 / 选中用的交互区域。
+    QPainterPath buildInteractionPath(const QPainterPath& path) const;
+
     /// @brief 根据 m_data.style 构造 QPen；预览模式下颜色变浅、改为虚线。
     QPen buildPen() const;
-
-    /// @brief 把用户拖动产生的 pos() 偏移写入到 m_data，并把 item 的 pos 归零。
-    /// @param delta 鼠标相对按下时的位移（场景坐标）
-    void commitMoveOffset(const QPointF& delta);
 
     /// @brief 绑定的数据（构造时已归一化）
     ShapeData m_data;
@@ -99,7 +94,4 @@ class ShapeItem : public QGraphicsObject {
 
     /// @brief true 时允许 item 自己绘制选中虚线框；Select 工具下由 overlay 接管。
     bool m_selectionDecorationVisible = true;
-
-    /// @brief 抑制"提交位移 → 触发 mouseReleaseEvent → 再提交"递归
-    bool m_committingMove = false;
 };

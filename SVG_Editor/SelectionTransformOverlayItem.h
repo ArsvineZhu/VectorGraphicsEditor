@@ -22,6 +22,8 @@
 
 #include <cstdint>
 
+#include "SelectionFrame.h"
+
 class QPainter;
 class QStyleOptionGraphicsItem;
 class QWidget;
@@ -62,16 +64,14 @@ class SelectionTransformOverlayItem : public QGraphicsObject {
     /// @param widget   Qt 传入的目标 widget（未使用）
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
 
-    /// @brief 设置当前选区矩形。会先 `prepareGeometryChange()`、归一化（处理反向矩形）、
-    ///        再根据是否为空决定显示 / 隐藏。
-    /// @param bounds  选区矩形（场景坐标系）
-    void setSelectionBounds(const QRectF& bounds);
+    /// @brief 设置当前选区 frame。会先 `prepareGeometryChange()`，再根据有效性决定显示 / 隐藏。
+    void setSelectionFrame(const SelectionFrame& frame);
 
-    /// @brief 清除选区：复位 `m_bounds` 并隐藏 item。
-    void clearSelectionBounds();
+    /// @brief 清除选区：复位 frame 并隐藏 item。
+    void clearSelectionFrame();
 
-    /// @brief 当前选区矩形（可能为空矩形）。
-    QRectF selectionBounds() const;
+    /// @brief 当前选区 frame。
+    SelectionFrame selectionFrame() const;
 
     /// @brief 控制是否显示缩放锚点与旋转手柄。
     void setHandlesVisible(bool visible);
@@ -91,11 +91,14 @@ class SelectionTransformOverlayItem : public QGraphicsObject {
     /// @brief 旋转手柄的圆心 = 选区顶边中点向上偏移 `kRotateHandleOffset`。
     QPointF rotateHandleCenter() const;
 
-    /// @brief 选区是否有效（既非 null 也非空）。
-    bool hasBounds() const;
+    /// @brief 选区是否有效（两条轴长度都非零）。
+    bool hasFrame() const;
 
-    /// @brief 当前选区矩形（场景坐标系）。空矩形 = 无选区。
-    QRectF m_bounds;
+    /// @brief 当前选区 frame（场景坐标系）。
+    SelectionFrame m_frame;
+
+    /// @brief 当前是否持有可绘制 frame。
+    bool m_hasFrame = false;
 
     /// @brief true 时绘制四角锚点和旋转手柄；false 时仅绘制虚线矩形。
     bool m_handlesVisible = true;

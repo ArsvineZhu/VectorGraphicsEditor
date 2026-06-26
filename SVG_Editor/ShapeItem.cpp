@@ -14,7 +14,6 @@
 
 #include "ShapeItem.h"
 
-#include <QGraphicsSceneMouseEvent>
 #include <QPainter>
 #include <QPainterPathStroker>
 
@@ -22,46 +21,14 @@
 
 ShapeItem::ShapeItem(const ShapeData& data, QGraphicsItem* parent)
     : QGraphicsObject(parent), m_data(normalizedShapeData(data)) {
-    // 默认启用选中与移动；预览模式会在 setPreviewMode 中关闭
-    setFlags(QGraphicsItem::ItemIsSelectable | QGraphicsItem::ItemIsMovable);
+    // 选择态拖动统一交给 CanvasView 协调，避免 Qt 的临时 pos() 与持久 transform 混用。
+    setFlag(QGraphicsItem::ItemIsSelectable);
     setZValue(m_data.zValue);
 }
 
 QRectF ShapeItem::boundingRect() const { return shape().boundingRect().adjusted(-4.0, -4.0, 4.0, 4.0); }
 
-QPainterPath ShapeItem::shape() const {
-    QPainterPath path = buildPath();
-    if (path.isEmpty()) {
-        return path;
-    }
-
-    if (!m_data.style.strokeEnabled) {
-        if (shapeSupportsFill(m_data.type) && m_data.style.fillEnabled) {
-            return path;
-        }
-
-        const qreal fallbackWidth = std::max<qreal>(8.0, m_data.style.strokeWidth + 6.0);
-        QPainterPathStroker stroker;
-        stroker.setWidth(fallbackWidth);
-        stroker.setCapStyle(Qt::RoundCap);
-        stroker.setJoinStyle(Qt::RoundJoin);
-        return stroker.createStroke(path);
-    }
-
-    // 命中区域沿描边方向外扩，至少 8 像素、否则按 strokeWidth+6 决定
-    const qreal strokerWidth = std::max<qreal>(8.0, m_data.style.strokeWidth + 6.0);
-    QPainterPathStroker stroker;
-    stroker.setWidth(strokerWidth);
-    stroker.setCapStyle(Qt::RoundCap);
-    stroker.setJoinStyle(Qt::RoundJoin);
-
-    if (shapeSupportsFill(m_data.type) && m_data.style.fillEnabled) {
-        // 填充图形：把"路径"和"描边外扩"取并集，保证填充区域也能命中
-        return stroker.createStroke(path).united(path);
-    }
-
-    return stroker.createStroke(path);
-}
+QPainterPath ShapeItem::shape() const { return buildInteractionPath(buildPath()); }
 
 void ShapeItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget*) {
     painter->setRenderHint(QPainter::Antialiasing, true);
@@ -103,9 +70,8 @@ void ShapeItem::setShapeData(const ShapeData& data) {
 
 void ShapeItem::setPreviewMode(bool enabled) {
     m_previewMode = enabled;
-    // 预览时不允许选中和拖动，避免破坏"正在绘制"的视觉状态
+    // 预览节点不参与选择态交互，避免把“正在绘制”的临时图元混进选择系统。
     setFlag(QGraphicsItem::ItemIsSelectable, !enabled);
-    setFlag(QGraphicsItem::ItemIsMovable, !enabled);
     update();
 }
 
@@ -118,30 +84,9 @@ void ShapeItem::setSelectionDecorationVisible(bool visible) {
     update();
 }
 
-bool ShapeItem::hasPendingMoveOffset() const { return !qFuzzyIsNull(pos().x()) || !qFuzzyIsNull(pos().y()); }
+QRectF ShapeItem::localGeometryBounds() const { return buildBasePath().boundingRect(); }
 
-void ShapeItem::commitPendingMoveOffset() {
-    if (m_previewMode || m_committingMove || !hasPendingMoveOffset()) {
-        return;
-    }
-
-    commitMoveOffset(pos());
-    emit shapeChanged(this);
-}
-
-void ShapeItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
-    QGraphicsObject::mouseReleaseEvent(event);
-
-    // 预览模式 / 已经在提交位移中：直接返回
-    if (m_previewMode || m_committingMove) {
-        return;
-    }
-
-    // Qt 通过修改 pos() 实现 ItemIsMovable；此时 pos() 即为按下→释放的累计位移
-    if (hasPendingMoveOffset()) {
-        commitPendingMoveOffset();
-    }
-}
+QRectF ShapeItem::localSelectionBounds() const { return buildInteractionPath(buildBasePath()).boundingRect(); }
 
 QPainterPath ShapeItem::buildPath() const { return m_data.transform.map(buildBasePath()); }
 
@@ -194,6 +139,38 @@ QPainterPath ShapeItem::buildBasePath() const {
     return path;
 }
 
+QPainterPath ShapeItem::buildInteractionPath(const QPainterPath& path) const {
+    if (path.isEmpty()) {
+        return path;
+    }
+
+    if (!m_data.style.strokeEnabled) {
+        if (shapeSupportsFill(m_data.type) && m_data.style.fillEnabled) {
+            return path;
+        }
+
+        const qreal fallbackWidth = std::max<qreal>(8.0, m_data.style.strokeWidth + 6.0);
+        QPainterPathStroker stroker;
+        stroker.setWidth(fallbackWidth);
+        stroker.setCapStyle(Qt::RoundCap);
+        stroker.setJoinStyle(Qt::RoundJoin);
+        return stroker.createStroke(path);
+    }
+
+    // 命中区域沿描边方向外扩，至少 8 像素、否则按 strokeWidth+6 决定。
+    const qreal strokerWidth = std::max<qreal>(8.0, m_data.style.strokeWidth + 6.0);
+    QPainterPathStroker stroker;
+    stroker.setWidth(strokerWidth);
+    stroker.setCapStyle(Qt::RoundCap);
+    stroker.setJoinStyle(Qt::RoundJoin);
+
+    if (shapeSupportsFill(m_data.type) && m_data.style.fillEnabled) {
+        return stroker.createStroke(path).united(path);
+    }
+
+    return stroker.createStroke(path);
+}
+
 QPen ShapeItem::buildPen() const {
     if (!m_previewMode && !m_data.style.strokeEnabled) {
         return Qt::NoPen;
@@ -206,20 +183,4 @@ QPen ShapeItem::buildPen() const {
         pen.setStyle(Qt::DashLine);
     }
     return pen;
-}
-
-void ShapeItem::commitMoveOffset(const QPointF& delta) {
-    if (qFuzzyIsNull(delta.x()) && qFuzzyIsNull(delta.y())) {
-        return;
-    }
-
-    prepareGeometryChange();
-    QTransform translation;
-    translation.translate(delta.x(), delta.y());
-    applyTransformToShapeData(m_data, translation);
-    // 2) 通过 m_committingMove 抑制"setPos(0,0) 触发 mouseReleaseEvent 再提交"
-    m_committingMove = true;
-    setPos(QPointF());
-    m_committingMove = false;
-    update();
 }

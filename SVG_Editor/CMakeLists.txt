@@ -2,6 +2,8 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
 
 set(SVG_EDITOR_CORE_SOURCES
   AppLanguage.h
+  SelectionFrame.cpp
+  SelectionFrame.h
   ShapeData.cpp
   ShapeData.h
   FileManager.cpp
@@ -43,6 +45,8 @@ set_property(GLOBAL APPEND PROPERTY SVG_EDITOR_SOURCE_FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/SelectionTransformOverlayItem.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/SelectionTransformOverlayItem.h
   ${CMAKE_CURRENT_SOURCE_DIR}/AppLanguage.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/SelectionFrame.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/SelectionFrame.h
   ${CMAKE_CURRENT_SOURCE_DIR}/ShapeData.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/ShapeData.h
   ${CMAKE_CURRENT_SOURCE_DIR}/ShapeItem.cpp

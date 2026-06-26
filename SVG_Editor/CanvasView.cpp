@@ -88,9 +88,7 @@ QRectF circleRectFromPoints(const QPointF& start, const QPointF& end) {
 }
 
 /// @brief 多个 ShapeItem 的合并外接矩形。空列表返回空矩形。
-/// @note  使用 `item->shape().boundingRect()` 而非 `sceneBoundingRect()`，避免
-///        笔触宽度引入的额外留白。
-QRectF selectionBoundsForItems(const QList<ShapeItem*>& items) {
+QRectF sceneBoundsForItems(const QList<ShapeItem*>& items) {
     QRectF bounds;
     bool first = true;
     for (ShapeItem* item : items) {
@@ -98,8 +96,7 @@ QRectF selectionBoundsForItems(const QList<ShapeItem*>& items) {
             continue;
         }
 
-        // 选中图形在拖动过程中会先暂存在 item->pos()，这里必须取 sceneTransform 后的场景 bbox，
-        // 否则 overlay 会停在旧位置，与图形本体分裂成两个框。
+        // 多选初始 frame 仍从场景空间轴对齐并集框起步；后续旋转/缩放再改由 frame 自己跟踪。
         const QRectF itemBounds = item->sceneTransform().map(item->shape()).boundingRect();
 
         if (first) {
@@ -114,24 +111,41 @@ QRectF selectionBoundsForItems(const QList<ShapeItem*>& items) {
     return bounds.normalized();
 }
 
-/// @brief 给定手柄位置，返回缩放变换的固定锚点（与该手柄对角的点）。
-/// @note  Rotate / None 一律回退为选区中心。
-QPointF selectionPivotForHandle(SelectionTransformOverlayItem::Handle handle, const QRectF& bounds) {
+/// @brief 给定手柄位置，返回 frame 局部坐标中的锚点位置。
+QPointF localPointForHandle(SelectionTransformOverlayItem::Handle handle) {
     switch (handle) {
     case SelectionTransformOverlayItem::Handle::TopLeft:
-        return bounds.bottomRight();
+        return QPointF(0.0, 0.0);
     case SelectionTransformOverlayItem::Handle::TopRight:
-        return bounds.bottomLeft();
+        return QPointF(1.0, 0.0);
     case SelectionTransformOverlayItem::Handle::BottomLeft:
-        return bounds.topRight();
+        return QPointF(0.0, 1.0);
     case SelectionTransformOverlayItem::Handle::BottomRight:
-        return bounds.topLeft();
+        return QPointF(1.0, 1.0);
     case SelectionTransformOverlayItem::Handle::Rotate:
     case SelectionTransformOverlayItem::Handle::None:
-        return bounds.center();
+        return QPointF(0.5, 0.5);
     }
 
-    return bounds.center();
+    return QPointF(0.5, 0.5);
+}
+
+SelectionTransformOverlayItem::Handle oppositeHandle(SelectionTransformOverlayItem::Handle handle) {
+    switch (handle) {
+    case SelectionTransformOverlayItem::Handle::TopLeft:
+        return SelectionTransformOverlayItem::Handle::BottomRight;
+    case SelectionTransformOverlayItem::Handle::TopRight:
+        return SelectionTransformOverlayItem::Handle::BottomLeft;
+    case SelectionTransformOverlayItem::Handle::BottomLeft:
+        return SelectionTransformOverlayItem::Handle::TopRight;
+    case SelectionTransformOverlayItem::Handle::BottomRight:
+        return SelectionTransformOverlayItem::Handle::TopLeft;
+    case SelectionTransformOverlayItem::Handle::Rotate:
+    case SelectionTransformOverlayItem::Handle::None:
+        return SelectionTransformOverlayItem::Handle::None;
+    }
+
+    return SelectionTransformOverlayItem::Handle::None;
 }
 
 /// @brief 给定中心与点，返回该点相对中心的极角（弧度，范围 (-π, π]）。
@@ -142,16 +156,26 @@ qreal angleFromCenter(const QPointF& center, const QPointF& point) {
 /// @brief 把角度吸附到 15° 的整数倍。
 qreal snapAngleDegrees(qreal degrees) { return std::round(degrees / 15.0) * 15.0; }
 
-/// @brief 构造一个「以 pivot 为锚点、按当前手柄拖动距离缩放」的 QTransform。
-/// @param keepAspectRatio  Shift 按下时为 true：用 max(|sx|, |sy|) 同时约束两轴
-/// @note  起点与当前点水平 / 垂直偏移为 0 时分别用 1.0 兜底，避免除零
-QTransform scaleTransformFromHandle(SelectionTransformOverlayItem::Handle handle, const QRectF& bounds,
-                                    const QPointF& startPoint, const QPointF& currentPoint, bool keepAspectRatio) {
-    const QPointF pivot = selectionPivotForHandle(handle, bounds);
-    const qreal startDx = startPoint.x() - pivot.x();
-    const qreal startDy = startPoint.y() - pivot.y();
-    qreal scaleX = qFuzzyIsNull(startDx) ? 1.0 : (currentPoint.x() - pivot.x()) / startDx;
-    qreal scaleY = qFuzzyIsNull(startDy) ? 1.0 : (currentPoint.y() - pivot.y()) / startDy;
+/// @brief 构造一个「沿当前 frame 局部轴缩放」的场景空间变换。
+/// @details 先把鼠标点逆变换到 frame 的局部单位矩形，再在局部坐标里计算缩放，
+///          最后通过 `M * S * M^-1` 映射回场景空间。
+QTransform scaleTransformFromHandle(SelectionTransformOverlayItem::Handle handle, const SelectionFrame& frame,
+                                    const QPointF& currentPoint, const QPointF& handlePressOffsetLocal,
+                                    bool keepAspectRatio) {
+    const QTransform localToScene = frame.localToSceneTransform();
+    bool invertible = false;
+    const QTransform sceneToLocal = localToScene.inverted(&invertible);
+    if (!invertible) {
+        return QTransform();
+    }
+
+    const QPointF handleLocal = localPointForHandle(handle);
+    const QPointF pivotLocal = localPointForHandle(oppositeHandle(handle));
+    const QPointF currentLocal = sceneToLocal.map(currentPoint) - handlePressOffsetLocal;
+    const qreal startDx = handleLocal.x() - pivotLocal.x();
+    const qreal startDy = handleLocal.y() - pivotLocal.y();
+    qreal scaleX = qFuzzyIsNull(startDx) ? 1.0 : (currentLocal.x() - pivotLocal.x()) / startDx;
+    qreal scaleY = qFuzzyIsNull(startDy) ? 1.0 : (currentLocal.y() - pivotLocal.y()) / startDy;
 
     if (keepAspectRatio) {
         const qreal magnitude = std::max(std::abs(scaleX), std::abs(scaleY));
@@ -159,17 +183,18 @@ QTransform scaleTransformFromHandle(SelectionTransformOverlayItem::Handle handle
         scaleY = (scaleY < 0.0 ? -1.0 : 1.0) * magnitude;
     }
 
-    QTransform transform;
-    transform.translate(pivot.x(), pivot.y());
-    transform.scale(scaleX, scaleY);
-    transform.translate(-pivot.x(), -pivot.y());
-    return transform;
+    QTransform localScale;
+    localScale.translate(pivotLocal.x(), pivotLocal.y());
+    localScale.scale(scaleX, scaleY);
+    localScale.translate(-pivotLocal.x(), -pivotLocal.y());
+    return localToScene * localScale * sceneToLocal;
 }
 
 /// @brief 构造一个「以 center 为旋转中心、累计旋转量为 start→current 极角差」的 QTransform。
 /// @param snapToFifteenDegrees  Shift 按下时为 true：把累计角度吸附到 15° 整数倍
-QTransform rotationTransformFromPoints(const QPointF& center, const QPointF& startPoint, const QPointF& currentPoint,
-                                       bool snapToFifteenDegrees) {
+QTransform rotationTransformFromPoints(const SelectionFrame& frame, const QPointF& startPoint,
+                                       const QPointF& currentPoint, bool snapToFifteenDegrees) {
+    const QPointF center = frame.center();
     qreal rotationDegrees =
         qRadiansToDegrees(angleFromCenter(center, currentPoint) - angleFromCenter(center, startPoint));
     if (snapToFifteenDegrees) {
@@ -220,13 +245,14 @@ void CanvasView::setTool(Tool tool) {
     }
 
     // 切工具必须把任何进行中的会话 / 预览清掉，否则状态机之间会互相污染
+    cancelSelectionDrag();
     cancelTransformSession();
     cancelDrawing();
     m_tool = tool;
     // 工具切换影响覆盖层可见性：非 Select 时不能显示手柄
     setDragMode(tool == Tool::Select ? QGraphicsView::RubberBandDrag : QGraphicsView::NoDrag);
-    m_selectionMoveCandidate = false;
-    m_selectionMoveActive = false;
+    m_selectionDragCandidate = false;
+    invalidateSelectionFrame();
     updateSelectionDecorations();
     updateSelectionOverlay();
 
@@ -252,6 +278,7 @@ void CanvasView::updateSelectedShape(const ShapeData& data) {
     item->setShapeData(data);
     // 把用户改后的样式作为「当前样式」保留，下次新画的图形继承
     m_currentStyle = data.style;
+    invalidateSelectionFrame();
     refreshSelectionNotification();
 }
 
@@ -261,8 +288,11 @@ void CanvasView::deleteSelectedItem() {
         return;
     }
 
+    cancelSelectionDrag();
+    cancelTransformSession();
     m_scene->removeItem(item);
     delete item;
+    invalidateSelectionFrame();
     refreshSelectionNotification();
 }
 
@@ -273,11 +303,13 @@ void CanvasView::deleteSelectedItems() {
     }
 
     // 多选删除：先取消缩放 / 旋转会话，避免覆盖层与正在被删的 item 互相干扰
+    cancelSelectionDrag();
     cancelTransformSession();
     for (ShapeItem* item : items) {
         m_scene->removeItem(item);
         delete item;
     }
+    invalidateSelectionFrame();
     refreshSelectionNotification();
 }
 
@@ -309,6 +341,7 @@ void CanvasView::pasteCopiedItem() {
 }
 
 void CanvasView::clearCanvas() {
+    cancelSelectionDrag();
     cancelTransformSession();
     cancelDrawing();
     // QGraphicsScene::clear 会顺带删除 addItem 的所有 child（包括 m_selectionOverlay！）
@@ -316,6 +349,9 @@ void CanvasView::clearCanvas() {
     m_previewItem = nullptr;
     m_zCounter = 0.0;
     m_pasteCount = 0;
+    m_selectionFrame.reset();
+    m_selectionDragCandidate = false;
+    m_selectionDragSession = {};
     // 重建覆盖层（被上面 clear 释放了）
     m_selectionOverlay = new SelectionTransformOverlayItem();
     m_scene->addItem(m_selectionOverlay);
@@ -356,6 +392,7 @@ void CanvasView::loadDocument(const DocumentData& document) {
         // 加载时同步把 z 计数器抬到当前最高 z，避免新画的图形 z 倒挂
         m_zCounter = std::max(m_zCounter, shape.zValue);
     }
+    invalidateSelectionFrame();
     refreshSelectionNotification();
 }
 
@@ -421,8 +458,7 @@ int CanvasView::selectedShapeCount() const { return static_cast<int>(selectedSha
 
 void CanvasView::mousePressEvent(QMouseEvent* event) {
     const QPointF scenePoint = mapToScene(event->pos());
-    m_selectionMoveCandidate = false;
-    m_selectionMoveActive = false;
+    m_selectionDragCandidate = false;
 
     // 优先：Select 工具下点中手柄 → 进入缩放 / 旋转会话
     if (m_tool == Tool::Select && event->button() == Qt::LeftButton && m_selectionOverlay != nullptr &&
@@ -460,14 +496,13 @@ void CanvasView::mousePressEvent(QMouseEvent* event) {
         }
     }
 
+    QGraphicsView::mousePressEvent(event);
+
     if (m_tool == Tool::Select && event->button() == Qt::LeftButton) {
-        if (qgraphicsitem_cast<ShapeItem*>(itemAt(event->pos())) != nullptr) {
-            m_selectionMoveCandidate = true;
-            m_selectionMovePressViewPos = event->pos();
+        if (ShapeItem* item = shapeItemAtViewPosition(event->pos()); item != nullptr && item->isSelected()) {
+            armSelectionDrag(event->pos(), scenePoint);
         }
     }
-
-    QGraphicsView::mousePressEvent(event);
 }
 
 void CanvasView::mouseMoveEvent(QMouseEvent* event) {
@@ -476,6 +511,11 @@ void CanvasView::mouseMoveEvent(QMouseEvent* event) {
     // 缩放 / 旋转会话最高优先级
     if (m_transformSession.active) {
         updateTransformSession(scenePoint, event->modifiers());
+        return;
+    }
+
+    if (m_selectionDragSession.active) {
+        updateSelectionDrag(scenePoint);
         return;
     }
 
@@ -496,15 +536,13 @@ void CanvasView::mouseMoveEvent(QMouseEvent* event) {
         return;
     }
 
-    if (m_selectionMoveCandidate && !m_selectionMoveActive &&
+    if (m_selectionDragCandidate &&
         (event->pos() - m_selectionMovePressViewPos).manhattanLength() >= QApplication::startDragDistance()) {
-        m_selectionMoveActive = true;
+        beginSelectionDrag();
     }
 
-    if (m_selectionMoveActive) {
-        // 拖动已选图形时，由 overlay 独占绘制一个无手柄的当前选区矩形，
-        // 避免和 ShapeItem / 旧 bbox 叠出双框。
-        updateSelectionOverlay();
+    if (m_selectionDragSession.active) {
+        updateSelectionDrag(scenePoint);
     }
 }
 
@@ -521,24 +559,15 @@ void CanvasView::mouseReleaseEvent(QMouseEvent* event) {
         return;
     }
 
+    if (event->button() == Qt::LeftButton && m_selectionDragSession.active) {
+        finishSelectionDrag();
+        return;
+    }
+
     QGraphicsView::mouseReleaseEvent(event);
 
-    // Select 工具下用框选 / 拖动平移后：把 ShapeItem 内部缓存的「pending 偏移」真正落到 ShapeData
     if (m_tool == Tool::Select && event->button() == Qt::LeftButton) {
-        const bool selectionWasMoving = m_selectionMoveActive;
-        m_selectionMoveCandidate = false;
-        m_selectionMoveActive = false;
-
-        bool committed = false;
-        for (ShapeItem* item : selectedShapeItems()) {
-            if (item != nullptr && item->hasPendingMoveOffset()) {
-                item->commitPendingMoveOffset();
-                committed = true;
-            }
-        }
-        if (committed || selectionWasMoving) {
-            refreshSelectionNotification();
-        }
+        m_selectionDragCandidate = false;
     }
 }
 
@@ -566,6 +595,10 @@ void CanvasView::keyPressEvent(QKeyEvent* event) {
 
     // Esc：优先取消缩放 / 旋转会话；否则取消当前正在绘制的图形
     if (event->key() == Qt::Key_Escape) {
+        if (m_selectionDragSession.active) {
+            cancelSelectionDrag();
+            return;
+        }
         if (m_transformSession.active) {
             cancelTransformSession();
             return;
@@ -609,13 +642,19 @@ QList<ShapeItem*> CanvasView::selectedShapeItems() const {
     return selectedItems;
 }
 
-void CanvasView::handleSelectionChanged() { refreshSelectionNotification(); }
+void CanvasView::handleSelectionChanged() {
+    m_selectionDragCandidate = false;
+    m_selectionDragSession = {};
+    invalidateSelectionFrame();
+    refreshSelectionNotification();
+}
 
 void CanvasView::addShape(const ShapeData& data, bool selectNewItem) {
     std::unique_ptr<ShapeItem> item = ShapeFactory::createItem(data);
     // 桥接 ShapeItem 自身的 shapeChanged 信号：用户通过 PropertyPanel 改样式时同步到 m_currentStyle
     connect(item.get(), &ShapeItem::shapeChanged, this, [this](ShapeItem* changedItem) {
         m_currentStyle = changedItem->shapeData().style;
+        invalidateSelectionFrame();
         refreshSelectionNotification();
     });
 
@@ -800,6 +839,30 @@ ShapeStyle CanvasView::currentStyleFor(ShapeType type) const {
     return style;
 }
 
+std::optional<SelectionFrame> CanvasView::buildSelectionFrameFromSelection() const {
+    const QList<ShapeItem*> items = selectedShapeItems();
+    if (items.isEmpty()) {
+        return std::nullopt;
+    }
+
+    if (items.size() == 1) {
+        const ShapeItem* item = items.first();
+        // 单选 frame 贴真实几何，不贴命中扩张区域；否则旋转后再缩放会把误差一并放大。
+        SelectionFrame frame = SelectionFrame::fromRect(item->localGeometryBounds());
+        const QTransform sceneTransform = item->shapeData().transform;
+        return frame.mapped(sceneTransform);
+    }
+
+    const QRectF bounds = sceneBoundsForItems(items);
+    if (bounds.isNull() || bounds.isEmpty()) {
+        return std::nullopt;
+    }
+
+    return SelectionFrame::fromRect(bounds);
+}
+
+void CanvasView::invalidateSelectionFrame() { m_selectionFrame.reset(); }
+
 void CanvasView::refreshSelectionNotification() {
     const QList<ShapeItem*> items = selectedShapeItems();
     updateSelectionDecorations();
@@ -813,20 +876,27 @@ void CanvasView::updateSelectionOverlay() {
         return;
     }
 
-    // 覆盖层仅在 Select 工具 + 无活动变换会话时显示
-    if (m_tool != Tool::Select || m_transformSession.active) {
-        m_selectionOverlay->clearSelectionBounds();
+    if (m_tool != Tool::Select) {
+        m_selectionOverlay->clearSelectionFrame();
         return;
     }
 
-    const QList<ShapeItem*> items = selectedShapeItems();
-    if (items.isEmpty()) {
-        m_selectionOverlay->clearSelectionBounds();
+    // 单选时每次都从图形当前几何重建 frame，避免“旋转后再缩放”时缓存 frame 漂出本体。
+    if (selectedShapeCount() == 1 && !m_selectionDragSession.active && !m_transformSession.active) {
+        m_selectionFrame = buildSelectionFrameFromSelection();
+    }
+
+    if (!m_selectionFrame.has_value()) {
+        m_selectionFrame = buildSelectionFrameFromSelection();
+    }
+
+    if (!m_selectionFrame.has_value()) {
+        m_selectionOverlay->clearSelectionFrame();
         return;
     }
 
-    m_selectionOverlay->setHandlesVisible(!m_selectionMoveActive);
-    m_selectionOverlay->setSelectionBounds(selectionBoundsForItems(items));
+    m_selectionOverlay->setHandlesVisible(!m_selectionDragSession.active && !m_transformSession.active);
+    m_selectionOverlay->setSelectionFrame(*m_selectionFrame);
 }
 
 void CanvasView::updateSelectionDecorations() {
@@ -838,31 +908,138 @@ void CanvasView::updateSelectionDecorations() {
     }
 }
 
+ShapeItem* CanvasView::shapeItemAtViewPosition(const QPoint& viewPosition) const {
+    if (QGraphicsItem* graphicsItem = itemAt(viewPosition)) {
+        return qgraphicsitem_cast<ShapeItem*>(graphicsItem);
+    }
+    return nullptr;
+}
+
+void CanvasView::armSelectionDrag(const QPoint& viewPosition, const QPointF& scenePoint) {
+    m_selectionDragCandidate = true;
+    m_selectionMovePressViewPos = viewPosition;
+    m_selectionDragPressScenePoint = scenePoint;
+}
+
+void CanvasView::beginSelectionDrag() {
+    if (!m_selectionDragCandidate) {
+        return;
+    }
+
+    if (!m_selectionFrame.has_value()) {
+        m_selectionFrame = buildSelectionFrameFromSelection();
+    }
+    if (!m_selectionFrame.has_value()) {
+        return;
+    }
+
+    const QList<ShapeItem*> items = selectedShapeItems();
+    if (items.isEmpty()) {
+        return;
+    }
+
+    m_selectionDragSession = {};
+    m_selectionDragSession.active = true;
+    m_selectionDragSession.pressScenePoint = m_selectionDragPressScenePoint;
+    m_selectionDragSession.originalFrame = *m_selectionFrame;
+    for (ShapeItem* item : items) {
+        m_selectionDragSession.entries.append({item, item->shapeData()});
+    }
+
+    m_selectionDragCandidate = false;
+    updateSelectionOverlay();
+}
+
+void CanvasView::updateSelectionDrag(const QPointF& scenePoint) {
+    if (!m_selectionDragSession.active) {
+        return;
+    }
+
+    const QPointF delta = scenePoint - m_selectionDragSession.pressScenePoint;
+    QTransform translation;
+    translation.translate(delta.x(), delta.y());
+
+    for (const TransformSelectionEntry& entry : m_selectionDragSession.entries) {
+        if (entry.item == nullptr) {
+            continue;
+        }
+
+        ShapeData data = entry.originalData;
+        applyTransformToShapeData(data, translation);
+        entry.item->setShapeData(data);
+    }
+
+    // 选择态拖动必须严格跟鼠标；因此 frame 也以同一份 delta 从按下快照平移。
+    if (m_selectionDragSession.entries.size() == 1) {
+        m_selectionFrame = buildSelectionFrameFromSelection();
+    } else {
+        m_selectionFrame = m_selectionDragSession.originalFrame.translated(delta);
+    }
+    updateSelectionOverlay();
+}
+
+void CanvasView::finishSelectionDrag() {
+    if (!m_selectionDragSession.active) {
+        return;
+    }
+
+    m_selectionDragCandidate = false;
+    m_selectionDragSession = {};
+    refreshSelectionNotification();
+}
+
+void CanvasView::cancelSelectionDrag() {
+    if (!m_selectionDragSession.active) {
+        m_selectionDragCandidate = false;
+        return;
+    }
+
+    for (const TransformSelectionEntry& entry : m_selectionDragSession.entries) {
+        if (entry.item != nullptr) {
+            entry.item->setShapeData(entry.originalData);
+        }
+    }
+
+    m_selectionFrame = m_selectionDragSession.originalFrame;
+    m_selectionDragCandidate = false;
+    m_selectionDragSession = {};
+    refreshSelectionNotification();
+}
+
 void CanvasView::beginTransformSession(SelectionTransformOverlayItem::Handle handle, const QPointF& scenePoint) {
     const QList<ShapeItem*> items = selectedShapeItems();
     if (items.isEmpty()) {
         return;
     }
 
+    if (!m_selectionFrame.has_value()) {
+        m_selectionFrame = buildSelectionFrameFromSelection();
+    }
+    if (!m_selectionFrame.has_value()) {
+        return;
+    }
+
     m_transformSession = {};
     m_transformSession.active = true;
     m_transformSession.handle = handle;
-    // 锁定会话开始时的 bbox 与中心 / 锚点，整个会话期间不变
-    m_transformSession.originalBounds = selectionBoundsForItems(items);
-    m_transformSession.center = m_transformSession.originalBounds.center();
-    m_transformSession.pivot = selectionPivotForHandle(handle, m_transformSession.originalBounds);
+    // 变换期间所有预览都从同一份初始 frame 快照推导，避免逐帧累积误差。
+    m_transformSession.originalFrame = *m_selectionFrame;
     m_transformSession.startPoint = scenePoint;
-    m_transformSession.startAngle = angleFromCenter(m_transformSession.center, scenePoint);
+    m_transformSession.handlePressOffsetLocal = QPointF();
+
+    if (handle != SelectionTransformOverlayItem::Handle::Rotate) {
+        bool invertible = false;
+        const QTransform sceneToLocal = m_transformSession.originalFrame.localToSceneTransform().inverted(&invertible);
+        if (invertible) {
+            m_transformSession.handlePressOffsetLocal = sceneToLocal.map(scenePoint) - localPointForHandle(handle);
+        }
+    }
 
     // 为每个被变换的图形拍快照，cancel 时用于回滚
     for (ShapeItem* item : items) {
         m_transformSession.entries.append({item, item->shapeData()});
     }
-
-    // 手柄本身要被拖动，临时隐藏避免视觉干扰
-    if (m_selectionOverlay != nullptr) {
-        m_selectionOverlay->hide();
-    }
+    updateSelectionOverlay();
 }
 
 void CanvasView::updateTransformSession(const QPointF& scenePoint, Qt::KeyboardModifiers modifiers) {
@@ -873,11 +1050,15 @@ void CanvasView::updateTransformSession(const QPointF& scenePoint, Qt::KeyboardM
     // Shift 按住：缩放等比 / 旋转 15° 吸附
     const bool shiftPressed = modifiers.testFlag(Qt::ShiftModifier);
     const bool rotate = m_transformSession.handle == SelectionTransformOverlayItem::Handle::Rotate;
-    const QTransform deltaTransform =
-        rotate ? rotationTransformFromPoints(m_transformSession.center, m_transformSession.startPoint, scenePoint,
-                                             shiftPressed)
-               : scaleTransformFromHandle(m_transformSession.handle, m_transformSession.originalBounds,
-                                          m_transformSession.startPoint, scenePoint, shiftPressed);
+    const SelectionFrame& originalFrame = m_transformSession.originalFrame;
+    const QPointF& startPoint = m_transformSession.startPoint;
+    QTransform deltaTransform;
+    if (rotate) {
+        deltaTransform = rotationTransformFromPoints(originalFrame, startPoint, scenePoint, shiftPressed);
+    } else {
+        deltaTransform = scaleTransformFromHandle(m_transformSession.handle, originalFrame, scenePoint,
+                                                  m_transformSession.handlePressOffsetLocal, shiftPressed);
+    }
 
     // 增量变换应用：每帧都用「originalData × deltaTransform」覆盖到 item
     // （不是累加，避免鼠标抖动时漂移）
@@ -891,10 +1072,12 @@ void CanvasView::updateTransformSession(const QPointF& scenePoint, Qt::KeyboardM
         entry.item->setShapeData(data);
     }
 
-    // 实时更新覆盖层 bbox：让手柄能跟着图形一起缩放
-    if (m_selectionOverlay != nullptr) {
-        m_selectionOverlay->setSelectionBounds(selectionBoundsForItems(selectedShapeItems()));
+    if (m_transformSession.entries.size() == 1) {
+        m_selectionFrame = buildSelectionFrameFromSelection();
+    } else {
+        m_selectionFrame = m_transformSession.originalFrame.mapped(deltaTransform);
     }
+    updateSelectionOverlay();
 }
 
 void CanvasView::finishTransformSession() {
@@ -903,6 +1086,9 @@ void CanvasView::finishTransformSession() {
     }
 
     m_transformSession = {};
+    if (selectedShapeCount() == 1) {
+        invalidateSelectionFrame();
+    }
     refreshSelectionNotification();
 }
 
@@ -918,6 +1104,7 @@ void CanvasView::cancelTransformSession() {
         }
     }
 
+    m_selectionFrame = m_transformSession.originalFrame;
     m_transformSession = {};
     refreshSelectionNotification();
 }

@@ -166,6 +166,12 @@ class CanvasView : public QGraphicsView {
     /// @brief 根据当前样式与 type，返回一个 style（不支持填充的 type 强制关闭 fillEnabled）。
     ShapeStyle currentStyleFor(ShapeType type) const;
 
+    /// @brief 从当前选择集重建选择 frame；无选中返回空。
+    std::optional<SelectionFrame> buildSelectionFrameFromSelection() const;
+
+    /// @brief 使当前缓存的选择 frame 失效；下次显示 overlay 时重建。
+    void invalidateSelectionFrame();
+
     /// @brief 把当前选中信息 emit 给监听者。
     void refreshSelectionNotification();
 
@@ -174,6 +180,24 @@ class CanvasView : public QGraphicsView {
 
     /// @brief 同步 ShapeItem 自带选中框的显示策略。
     void updateSelectionDecorations();
+
+    /// @brief 命中视口位置上的 ShapeItem；overlay 本身不计入。
+    ShapeItem* shapeItemAtViewPosition(const QPoint& viewPosition) const;
+
+    /// @brief 记录一次潜在的选择拖动起点。
+    void armSelectionDrag(const QPoint& viewPosition, const QPointF& scenePoint);
+
+    /// @brief 超过阈值后正式进入选择拖动会话。
+    void beginSelectionDrag();
+
+    /// @brief 根据当前鼠标位置更新拖动中的选择集。
+    void updateSelectionDrag(const QPointF& scenePoint);
+
+    /// @brief 结束拖动会话并保留结果。
+    void finishSelectionDrag();
+
+    /// @brief 取消拖动会话并回滚。
+    void cancelSelectionDrag();
 
     /// @brief 命中锚点后初始化缩放/旋转会话。
     void beginTransformSession(SelectionTransformOverlayItem::Handle handle, const QPointF& scenePoint);
@@ -234,6 +258,17 @@ class CanvasView : public QGraphicsView {
         ShapeData originalData;
     };
 
+    struct SelectionDragSession {
+        /// @brief 是否已经进入正式拖动会话。
+        bool active = false;
+        /// @brief 鼠标按下时的场景坐标，用来计算整体平移 delta。
+        QPointF pressScenePoint;
+        /// @brief 拖动开始前的 frame 快照，Esc/逐帧预览都以它为基准。
+        SelectionFrame originalFrame;
+        /// @brief 所有被拖动图形的起始快照。
+        QList<TransformSelectionEntry> entries;
+    };
+
     struct TransformSession {
         /// @brief 是否处于缩放/旋转会话中
         bool active = false;
@@ -241,27 +276,29 @@ class CanvasView : public QGraphicsView {
         SelectionTransformOverlayItem::Handle handle = SelectionTransformOverlayItem::Handle::None;
         /// @brief 每个被变换图形的起始快照 + 指针
         QList<TransformSelectionEntry> entries;
-        /// @brief 会话开始时整个选区的外接矩形
-        QRectF originalBounds;
-        /// @brief 缩放会话的固定锚点（与被拖拽角点对角的点）
-        QPointF pivot;
-        /// @brief 选区中心（用于旋转会话的旋转中心）
-        QPointF center;
+        /// @brief 会话开始时整个选区的 frame。
+        SelectionFrame originalFrame;
         /// @brief 会话开始时鼠标所在的场景坐标
         QPointF startPoint;
-        /// @brief 会话开始时鼠标相对 `center` 的角度（仅旋转使用）
-        qreal startAngle = 0.0;
+        /// @brief 缩放手柄的按下偏移（局部坐标），用于消除点击手柄时的参考点漂移。
+        QPointF handlePressOffsetLocal;
     };
+
+    /// @brief 当前缓存的选择 frame；选择集变化后会失效并延迟重建。
+    std::optional<SelectionFrame> m_selectionFrame;
 
     /// @brief 当前缩放/旋转会话状态
     TransformSession m_transformSession;
 
-    /// @brief Select 工具下，按下到某个图形上后等待是否进入拖动。
-    bool m_selectionMoveCandidate = false;
+    /// @brief 当前拖动会话状态。
+    SelectionDragSession m_selectionDragSession;
 
-    /// @brief 当前是否处于拖动已选图形的可视反馈阶段。
-    bool m_selectionMoveActive = false;
+    /// @brief Select 工具下，按下到某个选中图形上后等待是否超过拖动阈值。
+    bool m_selectionDragCandidate = false;
 
     /// @brief 记录按下时的视口坐标，用于判定是否越过拖动阈值。
     QPoint m_selectionMovePressViewPos;
+
+    /// @brief 记录拖动候选的场景按下点。
+    QPointF m_selectionDragPressScenePoint;
 };

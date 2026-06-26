@@ -42,21 +42,26 @@ SelectionTransformOverlayItem::SelectionTransformOverlayItem(QGraphicsItem* pare
 }
 
 QRectF SelectionTransformOverlayItem::boundingRect() const {
-    if (!hasBounds()) {
+    if (!hasFrame()) {
         return QRectF();
     }
 
+    QRectF bounds = m_frame.boundingRect();
     if (!m_handlesVisible) {
-        return m_bounds.adjusted(-4.0, -4.0, 4.0, 4.0);
+        return bounds.adjusted(-4.0, -4.0, 4.0, 4.0);
     }
 
-    // 留出旋转手柄上方的空间 (-40 顶部) 与四角手柄外延 (-20 水平/底部)
-    return m_bounds.adjusted(-20.0, -40.0, 20.0, 20.0);
+    bounds = bounds.united(handleRect(Handle::Rotate));
+    bounds = bounds.united(handleRect(Handle::TopLeft));
+    bounds = bounds.united(handleRect(Handle::TopRight));
+    bounds = bounds.united(handleRect(Handle::BottomLeft));
+    bounds = bounds.united(handleRect(Handle::BottomRight));
+    return bounds.adjusted(-8.0, -8.0, 8.0, 8.0);
 }
 
 QPainterPath SelectionTransformOverlayItem::shape() const {
     QPainterPath path;
-    if (!hasBounds() || !m_handlesVisible) {
+    if (!hasFrame() || !m_handlesVisible) {
         return path;
     }
 
@@ -68,7 +73,7 @@ QPainterPath SelectionTransformOverlayItem::shape() const {
 }
 
 void SelectionTransformOverlayItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget*) {
-    if (!hasBounds()) {
+    if (!hasFrame()) {
         return;
     }
 
@@ -83,7 +88,7 @@ void SelectionTransformOverlayItem::paint(QPainter* painter, const QStyleOptionG
     framePen.setCosmetic(true);
     painter->setPen(framePen);
     painter->setBrush(Qt::NoBrush);
-    painter->drawRect(m_bounds);
+    painter->drawPolygon(m_frame.polygon());
 
     if (!m_handlesVisible) {
         painter->restore();
@@ -91,7 +96,7 @@ void SelectionTransformOverlayItem::paint(QPainter* painter, const QStyleOptionG
     }
 
     // 2) 选区上沿中点 → 旋转手柄圆心的连接线
-    painter->drawLine(QPointF(m_bounds.center().x(), m_bounds.top()), rotateHandleCenter());
+    painter->drawLine(m_frame.topCenter(), rotateHandleCenter());
 
     // 3) 4 个角点方形手柄（白底蓝框）
     painter->setPen(QPen(QColor("#2d7ff9")));
@@ -106,21 +111,22 @@ void SelectionTransformOverlayItem::paint(QPainter* painter, const QStyleOptionG
     painter->restore();
 }
 
-void SelectionTransformOverlayItem::setSelectionBounds(const QRectF& bounds) {
+void SelectionTransformOverlayItem::setSelectionFrame(const SelectionFrame& frame) {
     prepareGeometryChange();
-    // normalized() 处理反向矩形（width 或 height 为负的情况）
-    m_bounds = bounds.normalized();
-    setVisible(hasBounds());
+    m_frame = frame;
+    m_hasFrame = frame.isValid();
+    setVisible(m_hasFrame);
     update();
 }
 
-void SelectionTransformOverlayItem::clearSelectionBounds() {
+void SelectionTransformOverlayItem::clearSelectionFrame() {
     prepareGeometryChange();
-    m_bounds = QRectF();
+    m_frame = SelectionFrame{};
+    m_hasFrame = false;
     hide();
 }
 
-QRectF SelectionTransformOverlayItem::selectionBounds() const { return m_bounds; }
+SelectionFrame SelectionTransformOverlayItem::selectionFrame() const { return m_frame; }
 
 void SelectionTransformOverlayItem::setHandlesVisible(bool visible) {
     if (m_handlesVisible == visible) {
@@ -135,7 +141,7 @@ void SelectionTransformOverlayItem::setHandlesVisible(bool visible) {
 bool SelectionTransformOverlayItem::handlesVisible() const { return m_handlesVisible; }
 
 SelectionTransformOverlayItem::Handle SelectionTransformOverlayItem::handleAt(const QPointF& scenePoint) const {
-    if (!hasBounds() || !m_handlesVisible) {
+    if (!hasFrame() || !m_handlesVisible) {
         return Handle::None;
     }
 
@@ -152,13 +158,13 @@ SelectionTransformOverlayItem::Handle SelectionTransformOverlayItem::handleAt(co
 QRectF SelectionTransformOverlayItem::handleRect(Handle handle) const {
     switch (handle) {
     case Handle::TopLeft:
-        return centeredRect(m_bounds.topLeft(), kHandleSize);
+        return centeredRect(m_frame.topLeft, kHandleSize);
     case Handle::TopRight:
-        return centeredRect(m_bounds.topRight(), kHandleSize);
+        return centeredRect(m_frame.topRight(), kHandleSize);
     case Handle::BottomLeft:
-        return centeredRect(m_bounds.bottomLeft(), kHandleSize);
+        return centeredRect(m_frame.bottomLeft(), kHandleSize);
     case Handle::BottomRight:
-        return centeredRect(m_bounds.bottomRight(), kHandleSize);
+        return centeredRect(m_frame.bottomRight(), kHandleSize);
     case Handle::Rotate:
         // 旋转手柄的 hit/test 矩形 = 2 倍半径的包围盒（paint 时画圆）
         return centeredRect(rotateHandleCenter(), kRotateHandleRadius * 2.0);
@@ -170,8 +176,8 @@ QRectF SelectionTransformOverlayItem::handleRect(Handle handle) const {
 }
 
 QPointF SelectionTransformOverlayItem::rotateHandleCenter() const {
-    // 选区上沿中点向上偏移固定距离，便于用户拖动时容易抓到
-    return QPointF(m_bounds.center().x(), m_bounds.top() - kRotateHandleOffset);
+    // 旋转后的 frame 也必须沿当前顶边外法线放置旋转手柄，才能保持交互语义一致。
+    return m_frame.topCenter() + m_frame.topNormal() * kRotateHandleOffset;
 }
 
-bool SelectionTransformOverlayItem::hasBounds() const { return !m_bounds.isNull() && !m_bounds.isEmpty(); }
+bool SelectionTransformOverlayItem::hasFrame() const { return m_hasFrame; }
