@@ -14,6 +14,7 @@
 
 #include <QJsonArray>
 
+#include <array>
 #include <algorithm>
 #include <cmath>
 
@@ -58,6 +59,26 @@ QVector<QPointF> pointsFromJson(const QJsonArray& array) {
         points.append(pointFromJson(value.toObject()));
     }
     return points;
+}
+
+QJsonObject transformToJson(const QTransform& transform) {
+    return {
+        {"m11", transform.m11()}, {"m12", transform.m12()}, {"m21", transform.m21()},
+        {"m22", transform.m22()}, {"dx", transform.dx()},   {"dy", transform.dy()},
+    };
+}
+
+std::optional<QTransform> transformFromJson(const QJsonObject& object) {
+    constexpr std::array<const char*, 6> keys = {"m11", "m12", "m21", "m22", "dx", "dy"};
+    for (const char* key : keys) {
+        if (object.value(key).isUndefined()) {
+            return std::nullopt;
+        }
+    }
+
+    return QTransform(object.value("m11").toDouble(), object.value("m12").toDouble(), 0.0,
+                      object.value("m21").toDouble(), object.value("m22").toDouble(), 0.0,
+                      object.value("dx").toDouble(), object.value("dy").toDouble(), 1.0);
 }
 
 /// @brief 把任意方向的 QRectF 修正为非退化矩形：先 normalized() 处理反向，
@@ -260,6 +281,10 @@ void translateShapeData(ShapeData& data, const QPointF& delta) {
     }
 }
 
+void applyTransformToShapeData(ShapeData& data, const QTransform& transform) {
+    data.transform = transform * data.transform;
+}
+
 QJsonObject shapeDataToJson(const ShapeData& source) {
     // 序列化前先归一化，保证磁盘里不会出现负宽高的矩形
     ShapeData data = normalizedShapeData(source);
@@ -326,6 +351,8 @@ QJsonObject shapeDataToJson(const ShapeData& source) {
         {"id", data.id},
         {"type", shapeTypeToString(data.type)},
         {"geometry", geometry},
+        {"transform", transformToJson(data.transform)},
+        {"strokeEnabled", data.style.strokeEnabled},
         // 颜色用 #AARRGGBB 形式保留 alpha；QColor::name 在 alpha=255 时仍输出 #RRGGBB，需调用 HexArgb 强制 8 位
         {"strokeColor", data.style.strokeColor.name(QColor::HexArgb)},
         {"strokeWidth", data.style.strokeWidth},
@@ -346,6 +373,10 @@ std::optional<ShapeData> shapeDataFromJson(const QJsonObject& object) {
     ShapeData data;
     data.id = object.value("id").toString();
     data.type = *type;
+    if (object.value("strokeEnabled").isUndefined()) {
+        return std::nullopt;
+    }
+    data.style.strokeEnabled = object.value("strokeEnabled").toBool(true);
     // 颜色缺省：描边回退到不透明黑，填充回退到全透明
     data.style.strokeColor = QColor(object.value("strokeColor").toString("#ff000000"));
     // 描边宽度最小夹紧到 0.5，避免出现不可见或反走样的描边
@@ -357,6 +388,11 @@ std::optional<ShapeData> shapeDataFromJson(const QJsonObject& object) {
 
     const std::optional<Qt::PenStyle> penStyle = penStyleFromString(object.value("strokeStyle").toString("solid"));
     data.style.strokeStyle = penStyle.value_or(Qt::SolidLine);
+    const std::optional<QTransform> transform = transformFromJson(object.value("transform").toObject());
+    if (!transform.has_value()) {
+        return std::nullopt;
+    }
+    data.transform = *transform;
 
     const QJsonObject geometry = object.value("geometry").toObject();
     switch (data.type) {

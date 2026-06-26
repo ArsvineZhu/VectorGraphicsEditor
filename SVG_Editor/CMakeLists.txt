@@ -10,12 +10,17 @@ set(SVG_EDITOR_CORE_SOURCES
 
 set(SVG_EDITOR_APP_SOURCES
   main.cpp
+  ThemeMode.h
+  ThemeUtils.cpp
+  ThemeUtils.h
   MainWindow.cpp
   MainWindow.h
   TutorialDialog.cpp
   TutorialDialog.h
   CanvasView.cpp
   CanvasView.h
+  SelectionTransformOverlayItem.cpp
+  SelectionTransformOverlayItem.h
   ShapeItem.cpp
   ShapeItem.h
   ShapeFactory.cpp
@@ -26,12 +31,17 @@ set(SVG_EDITOR_APP_SOURCES
 
 set_property(GLOBAL APPEND PROPERTY SVG_EDITOR_SOURCE_FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/ThemeMode.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/ThemeUtils.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/ThemeUtils.h
   ${CMAKE_CURRENT_SOURCE_DIR}/MainWindow.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/MainWindow.h
   ${CMAKE_CURRENT_SOURCE_DIR}/TutorialDialog.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/TutorialDialog.h
   ${CMAKE_CURRENT_SOURCE_DIR}/CanvasView.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/CanvasView.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/SelectionTransformOverlayItem.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/SelectionTransformOverlayItem.h
   ${CMAKE_CURRENT_SOURCE_DIR}/AppLanguage.h
   ${CMAKE_CURRENT_SOURCE_DIR}/ShapeData.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/ShapeData.h

@@ -1,11 +1,15 @@
 // =====================================================================
 // CanvasView.cpp
 // ---------------------------------------------------------------------
-// @brief CanvasView 的实现
-// @details 本文件实现两类工作流：
-//          - 拖拽工作流（drag）：Line / Rectangle / Circle / Ellipse
-//          - 路径工作流（path）：Polyline / Polygon
-//          二者共用 m_previewItem 字段；`cancelDrawing()` 是它们的共同出口。
+// @brief   CanvasView.h 中声明方法的实现
+// @details 本文件内容大致分四块：
+//          1) 匿名命名空间：i18n 文本挑选、Tool ↔ ShapeType 转换、
+//             缩放/旋转几何辅助、变换矩阵构造；
+//          2) 公开槽函数：language / tool / 选中图形的 CRUD（copy / paste /
+//             delete / 序列化 / 导出）；
+//          3) 鼠标 / 键盘事件：把用户输入分发到「拖拽创建」「路径创建」
+//             「选择变换」三条工作流；
+//          4) 私有助手：addShape、buildXxx、transformSession 三件套。
 // @layer   ui
 // =====================================================================
 
@@ -19,33 +23,34 @@
 #include <QLineF>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QTransform>
+#include <QtMath>
 #include <QUuid>
 
 #include <algorithm>
+#include <cmath>
 
 #include "ShapeFactory.h"
-#include "ShapeItem.h"
 
 namespace {
 
-/// @brief 在两种语言间二选一返回字符串（与 ShapeData.cpp 中类似但签名是 QString）。
+/// @brief i18n 文本挑选：根据 `m_language` 返回对应文案（不识别 Qt translator 体系）。
 QString textForLanguage(AppLanguage language, const QString& english, const QString& chinese) {
     return language == AppLanguage::SimplifiedChinese ? chinese : english;
 }
 
-/// @brief 是否为 path 类工具（多次点击绘制折线 / 多边形）。
+/// @brief 当前工具是否属于「路径工具」（多次点击累加顶点）。
 bool isPathTool(CanvasView::Tool tool) {
     return tool == CanvasView::Tool::Polyline || tool == CanvasView::Tool::Polygon;
 }
 
-/// @brief 是否为 drag 类工具（按下并拖拽以绘制）。
+/// @brief 当前工具是否属于「拖拽工具」（按下并拖动，松开落格）。
 bool isDragTool(CanvasView::Tool tool) {
     return tool == CanvasView::Tool::Line || tool == CanvasView::Tool::Rectangle || tool == CanvasView::Tool::Circle ||
            tool == CanvasView::Tool::Ellipse;
 }
 
-/// @brief 把工具枚举映射到图形类别。Select 工具落到 Rectangle 作为兜底返回值。
-/// @note Select 工具正常不会触发绘制分支，因此 default 分支理论上不可达。
+/// @brief 把工具枚举映射到 ShapeType。Select 工具的返回值是「哨兵」，仅占位。
 ShapeType toolToShapeType(CanvasView::Tool tool) {
     switch (tool) {
     case CanvasView::Tool::Point:
@@ -65,12 +70,13 @@ ShapeType toolToShapeType(CanvasView::Tool tool) {
     case CanvasView::Tool::Select:
         return ShapeType::Rectangle;
     }
+
     return ShapeType::Rectangle;
 }
 
-/// @brief 从起点和终点构造一个正方形外接矩形（用于 Circle 工具）。
-/// @details 圆需要"以起点为角点的等边矩形"，所以以 dx/dy 绝对值较大者为边长，
-///          并按拖动方向决定左 / 上偏移。
+/// @brief 从拖拽的起、终点构造圆的外接正方形。
+/// @details 圆必须以「正方形」bbox 表达：边长 = max(|dx|, |dy|)；
+///          起点始终是 bbox 的左上角（用 dx/dy 的符号决定是否需要左 / 上偏移）。
 QRectF circleRectFromPoints(const QPointF& start, const QPointF& end) {
     const qreal dx = end.x() - start.x();
     const qreal dy = end.y() - start.y();
@@ -80,28 +86,125 @@ QRectF circleRectFromPoints(const QPointF& start, const QPointF& end) {
     return QRectF(x, y, side, side);
 }
 
+/// @brief 多个 ShapeItem 的合并外接矩形。空列表返回空矩形。
+/// @note  使用 `item->shape().boundingRect()` 而非 `sceneBoundingRect()`，避免
+///        笔触宽度引入的额外留白。
+QRectF selectionBoundsForItems(const QList<ShapeItem*>& items) {
+    QRectF bounds;
+    bool first = true;
+    for (ShapeItem* item : items) {
+        if (item == nullptr) {
+            continue;
+        }
+
+        if (first) {
+            bounds = item->shape().boundingRect();
+            first = false;
+            continue;
+        }
+
+        bounds = bounds.united(item->shape().boundingRect());
+    }
+
+    return bounds.normalized();
+}
+
+/// @brief 给定手柄位置，返回缩放变换的固定锚点（与该手柄对角的点）。
+/// @note  Rotate / None 一律回退为选区中心。
+QPointF selectionPivotForHandle(SelectionTransformOverlayItem::Handle handle, const QRectF& bounds) {
+    switch (handle) {
+    case SelectionTransformOverlayItem::Handle::TopLeft:
+        return bounds.bottomRight();
+    case SelectionTransformOverlayItem::Handle::TopRight:
+        return bounds.bottomLeft();
+    case SelectionTransformOverlayItem::Handle::BottomLeft:
+        return bounds.topRight();
+    case SelectionTransformOverlayItem::Handle::BottomRight:
+        return bounds.topLeft();
+    case SelectionTransformOverlayItem::Handle::Rotate:
+    case SelectionTransformOverlayItem::Handle::None:
+        return bounds.center();
+    }
+
+    return bounds.center();
+}
+
+/// @brief 给定中心与点，返回该点相对中心的极角（弧度，范围 (-π, π]）。
+qreal angleFromCenter(const QPointF& center, const QPointF& point) {
+    return std::atan2(point.y() - center.y(), point.x() - center.x());
+}
+
+/// @brief 把角度吸附到 15° 的整数倍。
+qreal snapAngleDegrees(qreal degrees) { return std::round(degrees / 15.0) * 15.0; }
+
+/// @brief 构造一个「以 pivot 为锚点、按当前手柄拖动距离缩放」的 QTransform。
+/// @param keepAspectRatio  Shift 按下时为 true：用 max(|sx|, |sy|) 同时约束两轴
+/// @note  起点与当前点水平 / 垂直偏移为 0 时分别用 1.0 兜底，避免除零
+QTransform scaleTransformFromHandle(SelectionTransformOverlayItem::Handle handle, const QRectF& bounds,
+                                    const QPointF& startPoint, const QPointF& currentPoint, bool keepAspectRatio) {
+    const QPointF pivot = selectionPivotForHandle(handle, bounds);
+    const qreal startDx = startPoint.x() - pivot.x();
+    const qreal startDy = startPoint.y() - pivot.y();
+    qreal scaleX = qFuzzyIsNull(startDx) ? 1.0 : (currentPoint.x() - pivot.x()) / startDx;
+    qreal scaleY = qFuzzyIsNull(startDy) ? 1.0 : (currentPoint.y() - pivot.y()) / startDy;
+
+    if (keepAspectRatio) {
+        const qreal magnitude = std::max(std::abs(scaleX), std::abs(scaleY));
+        scaleX = (scaleX < 0.0 ? -1.0 : 1.0) * magnitude;
+        scaleY = (scaleY < 0.0 ? -1.0 : 1.0) * magnitude;
+    }
+
+    QTransform transform;
+    transform.translate(pivot.x(), pivot.y());
+    transform.scale(scaleX, scaleY);
+    transform.translate(-pivot.x(), -pivot.y());
+    return transform;
+}
+
+/// @brief 构造一个「以 center 为旋转中心、累计旋转量为 start→current 极角差」的 QTransform。
+/// @param snapToFifteenDegrees  Shift 按下时为 true：把累计角度吸附到 15° 整数倍
+QTransform rotationTransformFromPoints(const QPointF& center, const QPointF& startPoint, const QPointF& currentPoint,
+                                       bool snapToFifteenDegrees) {
+    qreal rotationDegrees =
+        qRadiansToDegrees(angleFromCenter(center, currentPoint) - angleFromCenter(center, startPoint));
+    if (snapToFifteenDegrees) {
+        rotationDegrees = snapAngleDegrees(rotationDegrees);
+    }
+
+    QTransform transform;
+    transform.translate(center.x(), center.y());
+    transform.rotate(rotationDegrees);
+    transform.translate(-center.x(), -center.y());
+    return transform;
+}
+
 } // namespace
 
 CanvasView::CanvasView(QWidget* parent) : QGraphicsView(parent), m_scene(new QGraphicsScene(this)) {
-    // 默认样式：黑色实线 2 像素、淡蓝填充
+    // 默认样式：黑色实线 2px、淡蓝填充（开启）；切换工具时这些值会被 currentStyleFor 复制
+    m_currentStyle.strokeEnabled = true;
     m_currentStyle.strokeColor = Qt::black;
     m_currentStyle.strokeWidth = 2.0;
     m_currentStyle.strokeStyle = Qt::SolidLine;
     m_currentStyle.fillColor = QColor("#80c8ff");
     m_currentStyle.fillEnabled = true;
 
-    // 1200×800 白色画布；sceneRect 是图形合法存在的坐标系范围
+    // 默认画布 1200×800：与 FileManager 缺省值、MainWindow 默认值保持一致
     m_scene->setSceneRect(0.0, 0.0, 1200.0, 800.0);
     m_scene->setBackgroundBrush(Qt::white);
 
     setScene(m_scene);
     setRenderHint(QPainter::Antialiasing, true);
-    // Select 工具用橡皮筋拖框选；其他工具关闭以避免与"按下即开始画"冲突
+    // Select 工具用框选；其他工具关掉 QGraphicsView 自带拖拽，避免和我们的拖拽冲突
     setDragMode(QGraphicsView::RubberBandDrag);
+    // 完整重绘：避免 Antialiasing + 高速拖拽时出现残影
     setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
 
-    // 选中变化即通知外部（PropertyPanel / MainWindow）
     connect(m_scene, &QGraphicsScene::selectionChanged, this, &CanvasView::handleSelectionChanged);
+
+    // 选择变换覆盖层：永远在场景里活着；空选区时 hide
+    m_selectionOverlay = new SelectionTransformOverlayItem();
+    m_scene->addItem(m_selectionOverlay);
 }
 
 void CanvasView::setLanguage(AppLanguage language) { m_language = language; }
@@ -111,11 +214,14 @@ void CanvasView::setTool(Tool tool) {
         return;
     }
 
-    // 切换工具前先复位任何正在进行的绘制（避免预览节点泄漏）
+    // 切工具必须把任何进行中的会话 / 预览清掉，否则状态机之间会互相污染
+    cancelTransformSession();
     cancelDrawing();
     m_tool = tool;
-    // Select 工具启用框选；其他工具关闭 Qt 自带拖动以免与我们自己的 drag 逻辑冲突
+    // 工具切换影响覆盖层可见性：非 Select 时不能显示手柄
     setDragMode(tool == Tool::Select ? QGraphicsView::RubberBandDrag : QGraphicsView::NoDrag);
+    updateSelectionOverlay();
+
     emit statusMessageChanged(tool == Tool::Select
                                   ? textForLanguage(m_language, "Current tool: Select", "当前工具：选择")
                                   : textForLanguage(m_language, "Current tool: %1", "当前工具：%1")
@@ -125,14 +231,18 @@ void CanvasView::setTool(Tool tool) {
 CanvasView::Tool CanvasView::tool() const { return m_tool; }
 
 void CanvasView::updateSelectedShape(const ShapeData& data) {
+    // PropertyPanel 写入回画布：仅在单选时生效（多选时面板本身不应被启用）
+    if (selectedShapeCount() != 1) {
+        return;
+    }
+
     ShapeItem* item = selectedShapeItem();
     if (item == nullptr) {
         return;
     }
 
-    // 1) 把 PropertyPanel 的修改写回图形
     item->setShapeData(data);
-    // 2) 把修改后的样式作为"当前样式"，让后续新图形继承
+    // 把用户改后的样式作为「当前样式」保留，下次新画的图形继承
     m_currentStyle = data.style;
     refreshSelectionNotification();
 }
@@ -143,9 +253,23 @@ void CanvasView::deleteSelectedItem() {
         return;
     }
 
-    // Qt scene 只接管 item 的 scene 关系，删除仍需手动 delete 以释放内存
     m_scene->removeItem(item);
     delete item;
+    refreshSelectionNotification();
+}
+
+void CanvasView::deleteSelectedItems() {
+    const QList<ShapeItem*> items = selectedShapeItems();
+    if (items.isEmpty()) {
+        return;
+    }
+
+    // 多选删除：先取消缩放 / 旋转会话，避免覆盖层与正在被删的 item 互相干扰
+    cancelTransformSession();
+    for (ShapeItem* item : items) {
+        m_scene->removeItem(item);
+        delete item;
+    }
     refreshSelectionNotification();
 }
 
@@ -155,8 +279,8 @@ void CanvasView::copySelectedItem() {
         return;
     }
 
-    // 把当前数据完整保存到剪贴板；m_pasteCount 复位以便粘贴偏移从 16 像素开始
     m_clipboardShape = item->shapeData();
+    // 复制时重置粘贴计数：保证粘贴偏移从 16px 起算
     m_pasteCount = 0;
     emit statusMessageChanged(textForLanguage(m_language, "Shape copied.", "图形已复制。"));
 }
@@ -167,22 +291,26 @@ void CanvasView::pasteCopiedItem() {
     }
 
     ++m_pasteCount;
-    // 1) 复用工厂的 clone + offset + z+1 能力
+    // 16 像素步进：每次粘贴递增偏移，避免完全重叠
     ShapeData copy =
         ShapeFactory::cloneWithOffset(*m_clipboardShape, QPointF(16.0 * m_pasteCount, 16.0 * m_pasteCount));
-    // 2) 粘贴的图形强制取当前 z 计数器的下一个值，确保盖在所有现有图形之上
+    // 粘贴的图形始终置顶
     copy.zValue = nextZValue();
     addShape(copy, true);
     emit statusMessageChanged(textForLanguage(m_language, "Shape pasted.", "图形已粘贴。"));
 }
 
 void CanvasView::clearCanvas() {
+    cancelTransformSession();
     cancelDrawing();
-    // scene->clear() 会删除所有 item（包括 item 持有的 QObject 关系）
+    // QGraphicsScene::clear 会顺带删除 addItem 的所有 child（包括 m_selectionOverlay！）
     m_scene->clear();
     m_previewItem = nullptr;
     m_zCounter = 0.0;
     m_pasteCount = 0;
+    // 重建覆盖层（被上面 clear 释放了）
+    m_selectionOverlay = new SelectionTransformOverlayItem();
+    m_scene->addItem(m_selectionOverlay);
     refreshSelectionNotification();
 }
 
@@ -190,7 +318,7 @@ DocumentData CanvasView::documentData() const {
     QList<ShapeData> shapes;
     QList<ShapeItem*> items;
 
-    // 1) 收集所有 ShapeItem（跳过预览节点）
+    // 升序遍历：低 z 在前；预览节点不导出
     for (QGraphicsItem* graphicsItem : m_scene->items(Qt::AscendingOrder)) {
         if (auto* shapeItem = qgraphicsitem_cast<ShapeItem*>(graphicsItem)) {
             if (shapeItem == m_previewItem) {
@@ -200,7 +328,7 @@ DocumentData CanvasView::documentData() const {
         }
     }
 
-    // 2) 按 z 升序排序，让磁盘顺序与显示顺序一致
+    // 按 z 升序稳定排序后输出，确保文件读回后的 z 与显示一致
     std::sort(items.begin(), items.end(), [](const ShapeItem* lhs, const ShapeItem* rhs) {
         return lhs->shapeData().zValue < rhs->shapeData().zValue;
     });
@@ -214,35 +342,62 @@ DocumentData CanvasView::documentData() const {
 
 void CanvasView::loadDocument(const DocumentData& document) {
     clearCanvas();
-    // 用文档中的画布尺寸替换默认 1200×800
     m_scene->setSceneRect(QRectF(QPointF(0.0, 0.0), document.canvasSize));
     for (const ShapeData& shape : document.shapes) {
         addShape(shape, false);
-        // 同步 z 计数器到当前最大值，避免后续新图形 z 倒退
+        // 加载时同步把 z 计数器抬到当前最高 z，避免新画的图形 z 倒挂
         m_zCounter = std::max(m_zCounter, shape.zValue);
     }
     refreshSelectionNotification();
 }
 
 bool CanvasView::exportImage(const QString& filePath, QString* errorMessage) const {
-    // 1) 优先按"所有图形实际占用的 bbox"导出；空画布回退到 sceneRect
-    QRectF bounds = m_scene->itemsBoundingRect();
-    if (bounds.isNull()) {
+    QRectF bounds;
+    bool first = true;
+    // 拼出所有图形的合并 bbox（不含预览）
+    for (QGraphicsItem* graphicsItem : m_scene->items(Qt::AscendingOrder)) {
+        auto* shapeItem = qgraphicsitem_cast<ShapeItem*>(graphicsItem);
+        if (shapeItem == nullptr || shapeItem == m_previewItem) {
+            continue;
+        }
+
+        if (first) {
+            bounds = shapeItem->shape().boundingRect();
+            first = false;
+            continue;
+        }
+
+        bounds = bounds.united(shapeItem->shape().boundingRect());
+    }
+
+    // 没有任何图形：回退到整张场景画布
+    if (first || bounds.isNull()) {
         bounds = m_scene->sceneRect();
     }
 
-    // 2) 四周外扩 20 像素留白；最小尺寸 400×300 防止极小图
+    // 20 像素外边距，避免最外层图形被裁掉
     bounds = bounds.adjusted(-20.0, -20.0, 20.0, 20.0);
+    // 最小导出尺寸 400×300，保证空画布也输出非空图片
     const QSize imageSize = bounds.size().toSize().expandedTo(QSize(400, 300));
 
     QImage image(imageSize, QImage::Format_ARGB32_Premultiplied);
     image.fill(Qt::white);
 
+    // 导出时不要把选区手柄画进去：先记录可见性，导出后恢复
+    const bool overlayWasVisible = m_selectionOverlay != nullptr && m_selectionOverlay->isVisible();
+    if (overlayWasVisible) {
+        // const 方法里修改 m_selectionOverlay 用 const_cast 绕过——Qt 的 API 不友好
+        const_cast<SelectionTransformOverlayItem*>(m_selectionOverlay)->hide();
+    }
+
     QPainter painter(&image);
     painter.setRenderHint(QPainter::Antialiasing, true);
-    // 把 scene 渲染到 image 上；前两个参数为目标矩形，第三个为源矩形
     m_scene->render(&painter, QRectF(QPointF(0.0, 0.0), imageSize), bounds);
     painter.end();
+
+    if (overlayWasVisible) {
+        const_cast<SelectionTransformOverlayItem*>(m_selectionOverlay)->show();
+    }
 
     if (!image.save(filePath)) {
         if (errorMessage != nullptr) {
@@ -254,12 +409,24 @@ bool CanvasView::exportImage(const QString& filePath, QString* errorMessage) con
     return true;
 }
 
+int CanvasView::selectedShapeCount() const { return static_cast<int>(selectedShapeItems().size()); }
+
 void CanvasView::mousePressEvent(QMouseEvent* event) {
     const QPointF scenePoint = mapToScene(event->pos());
 
+    // 优先：Select 工具下点中手柄 → 进入缩放 / 旋转会话
+    if (m_tool == Tool::Select && event->button() == Qt::LeftButton && m_selectionOverlay != nullptr &&
+        m_selectionOverlay->isVisible()) {
+        const SelectionTransformOverlayItem::Handle handle = m_selectionOverlay->handleAt(scenePoint);
+        if (handle != SelectionTransformOverlayItem::Handle::None) {
+            beginTransformSession(handle, scenePoint);
+            return;
+        }
+    }
+
     if (event->button() == Qt::LeftButton) {
+        // Point 工具：单击直接落点
         if (m_tool == Tool::Point) {
-            // Point 工具：单击即创建一个点
             ShapeData data;
             data.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
             data.type = ShapeType::Point;
@@ -270,34 +437,39 @@ void CanvasView::mousePressEvent(QMouseEvent* event) {
             return;
         }
 
+        // 拖拽工具：单次按下并拖动
         if (isDragTool(m_tool)) {
-            // 拖拽工作流 Step 1
             beginDragShape(scenePoint);
             return;
         }
 
+        // 路径工具：每次点击累加一个顶点
         if (isPathTool(m_tool)) {
-            // 路径工作流 Step 1
             beginPathPoint(scenePoint);
             return;
         }
     }
 
-    // 其他情况交给 QGraphicsView 处理（处理选中、拖框等）
     QGraphicsView::mousePressEvent(event);
 }
 
 void CanvasView::mouseMoveEvent(QMouseEvent* event) {
     const QPointF scenePoint = mapToScene(event->pos());
 
+    // 缩放 / 旋转会话最高优先级
+    if (m_transformSession.active) {
+        updateTransformSession(scenePoint, event->modifiers());
+        return;
+    }
+
+    // 拖拽创建中：实时更新预览
     if (m_dragDrawing) {
-        // 拖拽中持续更新预览
         updateDragPreview(scenePoint);
         return;
     }
 
+    // 路径创建中：延展最后一个"幽灵"顶点跟随光标
     if (!m_pathPoints.isEmpty()) {
-        // 路径绘制中：把光标作为"幽灵顶点"持续延展
         updatePathPreview(scenePoint);
     }
 
@@ -305,23 +477,42 @@ void CanvasView::mouseMoveEvent(QMouseEvent* event) {
 }
 
 void CanvasView::mouseReleaseEvent(QMouseEvent* event) {
+    // 缩放 / 旋转会话：左键释放即结束会话，保留当前结果
+    if (event->button() == Qt::LeftButton && m_transformSession.active) {
+        finishTransformSession();
+        return;
+    }
+
+    // 拖拽工作流：左键释放落格
     if (event->button() == Qt::LeftButton && m_dragDrawing) {
-        // 拖拽工作流 Step 3
         finishDragShape(mapToScene(event->pos()));
         return;
     }
 
     QGraphicsView::mouseReleaseEvent(event);
+
+    // Select 工具下用框选 / 拖动平移后：把 ShapeItem 内部缓存的「pending 偏移」真正落到 ShapeData
+    if (m_tool == Tool::Select && event->button() == Qt::LeftButton) {
+        bool committed = false;
+        for (ShapeItem* item : selectedShapeItems()) {
+            if (item != nullptr && item->hasPendingMoveOffset()) {
+                item->commitPendingMoveOffset();
+                committed = true;
+            }
+        }
+        if (committed) {
+            refreshSelectionNotification();
+        }
+    }
 }
 
 void CanvasView::mouseDoubleClickEvent(QMouseEvent* event) {
+    // 路径工具中双击结束绘制（与 Enter 等价）；如果双击点与上一个顶点不同则先追加
     if (event->button() == Qt::LeftButton && isPathTool(m_tool) && !m_pathPoints.isEmpty()) {
         const QPointF scenePoint = mapToScene(event->pos());
-        // 双击点与上一顶点距离 >1 像素时，作为新顶点加入
         if ((m_pathPoints.last() - scenePoint).manhattanLength() > 1.0) {
             m_pathPoints.append(scenePoint);
         }
-        // 结束 path 绘制；Polygon 工具会闭合，Polyline 不会
         finishPathShape(m_tool == Tool::Polygon);
         return;
     }
@@ -330,22 +521,26 @@ void CanvasView::mouseDoubleClickEvent(QMouseEvent* event) {
 }
 
 void CanvasView::keyPressEvent(QKeyEvent* event) {
-    // Enter 结束路径绘制
+    // 路径工具中按 Enter / Return 结束绘制
     if ((event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) && isPathTool(m_tool) &&
         !m_pathPoints.isEmpty()) {
         finishPathShape(m_tool == Tool::Polygon);
         return;
     }
 
-    // Esc 取消任何正在进行的绘制
+    // Esc：优先取消缩放 / 旋转会话；否则取消当前正在绘制的图形
     if (event->key() == Qt::Key_Escape) {
+        if (m_transformSession.active) {
+            cancelTransformSession();
+            return;
+        }
         cancelDrawing();
         return;
     }
 
-    // Delete / Backspace 删除选中
+    // Delete / Backspace：把删除请求 emit 给 MainWindow，由它决定是否二次确认
     if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) {
-        deleteSelectedItem();
+        emit deleteSelectionRequested();
         return;
     }
 
@@ -363,43 +558,50 @@ void CanvasView::keyPressEvent(QKeyEvent* event) {
 }
 
 ShapeItem* CanvasView::selectedShapeItem() const {
+    const QList<ShapeItem*> items = selectedShapeItems();
+    return items.size() == 1 ? items.first() : nullptr;
+}
+
+QList<ShapeItem*> CanvasView::selectedShapeItems() const {
     const QList<QGraphicsItem*> items = m_scene->selectedItems();
+    QList<ShapeItem*> selectedItems;
     for (QGraphicsItem* item : items) {
         if (auto* shapeItem = qgraphicsitem_cast<ShapeItem*>(item)) {
-            return shapeItem;
+            selectedItems.append(shapeItem);
         }
     }
-    return nullptr;
+    return selectedItems;
 }
 
 void CanvasView::handleSelectionChanged() { refreshSelectionNotification(); }
 
 void CanvasView::addShape(const ShapeData& data, bool selectNewItem) {
     std::unique_ptr<ShapeItem> item = ShapeFactory::createItem(data);
-    // 桥接 shapeChanged → 更新当前样式 + 通知外部
+    // 桥接 ShapeItem 自身的 shapeChanged 信号：用户通过 PropertyPanel 改样式时同步到 m_currentStyle
     connect(item.get(), &ShapeItem::shapeChanged, this, [this](ShapeItem* changedItem) {
         m_currentStyle = changedItem->shapeData().style;
         refreshSelectionNotification();
     });
 
-    // 转移所有权到 scene 后再由 Qt 内存管理
+    // unique_ptr 释放所有权给 Qt parent 机制（scene 接管）
     ShapeItem* rawItem = item.release();
     m_scene->addItem(rawItem);
+    // 同步 z 计数器为新图形的 z（≥），确保 nextZValue 不会回退
     m_zCounter = std::max(m_zCounter, data.zValue);
 
     if (selectNewItem) {
+        // 清空旧选中再选新图形：避免同时多个图形高亮
         m_scene->clearSelection();
         rawItem->setSelected(true);
     }
 }
 
 void CanvasView::beginDragShape(const QPointF& scenePoint) {
-    // 任何新 drag 开始前都先复位一次（避免与遗留 path 状态冲突）
+    // 切换到新拖拽时先清掉任何残留状态（其他工作流的 preview / path）
     cancelDrawing();
     m_dragDrawing = true;
     m_dragStartPoint = scenePoint;
 
-    // 创建预览 ShapeData；用当前工具类型与样式
     ShapeData preview = buildDragShapeData(scenePoint);
     preview.zValue = nextZValue();
     std::unique_ptr<ShapeItem> item = ShapeFactory::createItem(preview);
@@ -414,23 +616,20 @@ void CanvasView::updateDragPreview(const QPointF& scenePoint) {
         return;
     }
 
-    // 持续更新预览形状
     m_previewItem->setShapeData(buildDragShapeData(scenePoint));
 }
 
 void CanvasView::finishDragShape(const QPointF& scenePoint) {
-    // 取最终形状的快照
     const ShapeData data = buildDragShapeData(scenePoint);
 
     m_dragDrawing = false;
-    // 删除预览节点（最终 ShapeItem 会由 addShape 创建新的）
     if (m_previewItem != nullptr) {
         m_scene->removeItem(m_previewItem);
         delete m_previewItem;
         m_previewItem = nullptr;
     }
 
-    // 最小尺寸校验：避免误点造成 0 长度 / 0 面积图形
+    // 最小尺寸过滤：1.0 像素长度（线段 / 矩形宽高）以下视为误触，丢弃
     bool validShape = false;
     switch (data.type) {
     case ShapeType::Line:
@@ -451,9 +650,8 @@ void CanvasView::finishDragShape(const QPointF& scenePoint) {
 }
 
 void CanvasView::beginPathPoint(const QPointF& scenePoint) {
+    // 首次落点：构造预览图形（多边形 / 折线都先建一个空 ShapeItem）
     if (m_pathPoints.isEmpty()) {
-        // 第一次落点：创建预览节点（此时点列只含 1 个点，但点列过少不会绘制任何东西，
-        // 所以预览仅在 updatePathPreview 中追加"幽灵"顶点后才可见）
         ShapeData preview;
         preview.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
         preview.type = toolToShapeType(m_tool);
@@ -475,30 +673,26 @@ void CanvasView::updatePathPreview(const QPointF& scenePoint) {
         return;
     }
 
-    // 预览 = 已确认顶点 + 鼠标当前位置（作为"幽灵"尾点）
     m_previewItem->setShapeData(buildPathPreviewData(scenePoint));
 }
 
 void CanvasView::finishPathShape(bool closed) {
     if (m_pathPoints.isEmpty()) {
-        // 没有有效顶点，直接复位
         cancelDrawing();
         return;
     }
 
     ShapeData data = buildPathPreviewData(m_pathPoints.last());
-    // 用真正的顶点列表覆盖预览的"含幽灵点"列表
     data.points = m_pathPoints;
     data.type = closed ? ShapeType::Polygon : ShapeType::Polyline;
 
-    // 删除预览节点
     if (m_previewItem != nullptr) {
         m_scene->removeItem(m_previewItem);
         delete m_previewItem;
         m_previewItem = nullptr;
     }
 
-    // 最小顶点数：多边形 ≥3、折线 ≥2
+    // 多边形至少 3 顶点、折线至少 2 顶点
     const int minimumPoints = closed ? 3 : 2;
     if (data.points.size() >= minimumPoints) {
         addShape(data, true);
@@ -508,11 +702,9 @@ void CanvasView::finishPathShape(bool closed) {
 }
 
 void CanvasView::cancelDrawing() {
-    // drag 状态机复位
+    // 完整复位所有"正在绘制"状态：拖拽标志、路径顶点、预览节点
     m_dragDrawing = false;
-    // path 状态机复位
     m_pathPoints.clear();
-    // 释放预览节点
     if (m_previewItem != nullptr) {
         m_scene->removeItem(m_previewItem);
         delete m_previewItem;
@@ -525,21 +717,21 @@ ShapeData CanvasView::buildDragShapeData(const QPointF& endPoint) const {
     data.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     data.type = toolToShapeType(m_tool);
     data.style = currentStyleFor(data.type);
-    // 用 zCounter+1 作为临时 z；提交时会被 addShape 内的 max() 同步
+    // zValue = 当前计数 + 1：让预览图形始终在最上层
     data.zValue = m_zCounter + 1.0;
 
     switch (data.type) {
     case ShapeType::Line:
-        // Line：起点 + 终点
+        // 线段用 2 个端点表达
         data.points = {m_dragStartPoint, endPoint};
         break;
     case ShapeType::Rectangle:
     case ShapeType::Ellipse:
-        // Rectangle / Ellipse：QRectF 自动 normalized() 处理反向拖动
+        // 矩形 / 椭圆用起点 + 终点构造并归一化（处理反向拖动）
         data.rect = QRectF(m_dragStartPoint, endPoint).normalized();
         break;
     case ShapeType::Circle:
-        // Circle：必须用正方形外接框
+        // 圆需要先算出「正方形外接框」（circleRectFromPoints）
         data.rect = circleRectFromPoints(m_dragStartPoint, endPoint);
         break;
     default:
@@ -555,7 +747,7 @@ ShapeData CanvasView::buildPathPreviewData(const QPointF& cursorPoint) const {
     data.type = toolToShapeType(m_tool);
     data.style = currentStyleFor(data.type);
     data.zValue = m_zCounter + 1.0;
-    // 复用已确认的顶点，并附加鼠标位置作为"幽灵尾点"
+    // 路径预览 = 已确认顶点 + 当前光标（最后一个点用光标位置以实时跟随）
     data.points = m_pathPoints;
     data.points.append(cursorPoint);
     return normalizedShapeData(data);
@@ -563,8 +755,8 @@ ShapeData CanvasView::buildPathPreviewData(const QPointF& cursorPoint) const {
 
 ShapeStyle CanvasView::currentStyleFor(ShapeType type) const {
     ShapeStyle style = m_currentStyle;
-    // 不支持填充的形状（如 Point / Line / Polyline）必须关闭 fillEnabled，
-    // 否则 UI 在 PropertyPanel 中会出现无意义的勾选状态
+    // 不支持填充的图形（线段、点、折线）强制关闭 fillEnabled，
+    // 避免用户切到带填充的样式后给 Line / Point 误加填充
     if (!shapeSupportsFill(type)) {
         style.fillEnabled = false;
     }
@@ -572,15 +764,117 @@ ShapeStyle CanvasView::currentStyleFor(ShapeType type) const {
 }
 
 void CanvasView::refreshSelectionNotification() {
-    if (ShapeItem* item = selectedShapeItem(); item != nullptr) {
-        emit selectedShapeChanged(item);
-    } else {
-        emit selectedShapeChanged(nullptr);
+    const QList<ShapeItem*> items = selectedShapeItems();
+    updateSelectionOverlay();
+    // 单选时 primaryItem 非空；多选 / 无选时 primaryItem = nullptr，count 表达具体数量
+    emit selectionStateChanged(items.size() == 1 ? items.first() : nullptr, static_cast<int>(items.size()));
+}
+
+void CanvasView::updateSelectionOverlay() {
+    if (m_selectionOverlay == nullptr) {
+        return;
+    }
+
+    // 覆盖层仅在 Select 工具 + 无活动变换会话时显示
+    if (m_tool != Tool::Select || m_transformSession.active) {
+        m_selectionOverlay->clearSelectionBounds();
+        return;
+    }
+
+    const QList<ShapeItem*> items = selectedShapeItems();
+    if (items.isEmpty()) {
+        m_selectionOverlay->clearSelectionBounds();
+        return;
+    }
+
+    m_selectionOverlay->setSelectionBounds(selectionBoundsForItems(items));
+}
+
+void CanvasView::beginTransformSession(SelectionTransformOverlayItem::Handle handle, const QPointF& scenePoint) {
+    const QList<ShapeItem*> items = selectedShapeItems();
+    if (items.isEmpty()) {
+        return;
+    }
+
+    m_transformSession = {};
+    m_transformSession.active = true;
+    m_transformSession.handle = handle;
+    // 锁定会话开始时的 bbox 与中心 / 锚点，整个会话期间不变
+    m_transformSession.originalBounds = selectionBoundsForItems(items);
+    m_transformSession.center = m_transformSession.originalBounds.center();
+    m_transformSession.pivot = selectionPivotForHandle(handle, m_transformSession.originalBounds);
+    m_transformSession.startPoint = scenePoint;
+    m_transformSession.startAngle = angleFromCenter(m_transformSession.center, scenePoint);
+
+    // 为每个被变换的图形拍快照，cancel 时用于回滚
+    for (ShapeItem* item : items) {
+        m_transformSession.entries.append({item, item->shapeData()});
+    }
+
+    // 手柄本身要被拖动，临时隐藏避免视觉干扰
+    if (m_selectionOverlay != nullptr) {
+        m_selectionOverlay->hide();
     }
 }
 
+void CanvasView::updateTransformSession(const QPointF& scenePoint, Qt::KeyboardModifiers modifiers) {
+    if (!m_transformSession.active) {
+        return;
+    }
+
+    // Shift 按住：缩放等比 / 旋转 15° 吸附
+    const bool shiftPressed = modifiers.testFlag(Qt::ShiftModifier);
+    const bool rotate = m_transformSession.handle == SelectionTransformOverlayItem::Handle::Rotate;
+    const QTransform deltaTransform =
+        rotate ? rotationTransformFromPoints(m_transformSession.center, m_transformSession.startPoint, scenePoint,
+                                             shiftPressed)
+               : scaleTransformFromHandle(m_transformSession.handle, m_transformSession.originalBounds,
+                                          m_transformSession.startPoint, scenePoint, shiftPressed);
+
+    // 增量变换应用：每帧都用「originalData × deltaTransform」覆盖到 item
+    // （不是累加，避免鼠标抖动时漂移）
+    for (const TransformSelectionEntry& entry : m_transformSession.entries) {
+        if (entry.item == nullptr) {
+            continue;
+        }
+
+        ShapeData data = entry.originalData;
+        applyTransformToShapeData(data, deltaTransform);
+        entry.item->setShapeData(data);
+    }
+
+    // 实时更新覆盖层 bbox：让手柄能跟着图形一起缩放
+    if (m_selectionOverlay != nullptr) {
+        m_selectionOverlay->setSelectionBounds(selectionBoundsForItems(selectedShapeItems()));
+    }
+}
+
+void CanvasView::finishTransformSession() {
+    if (!m_transformSession.active) {
+        return;
+    }
+
+    m_transformSession = {};
+    refreshSelectionNotification();
+}
+
+void CanvasView::cancelTransformSession() {
+    if (!m_transformSession.active) {
+        return;
+    }
+
+    // 回滚每个被变换的图形到会话开始时的快照
+    for (const TransformSelectionEntry& entry : m_transformSession.entries) {
+        if (entry.item != nullptr) {
+            entry.item->setShapeData(entry.originalData);
+        }
+    }
+
+    m_transformSession = {};
+    refreshSelectionNotification();
+}
+
 qreal CanvasView::nextZValue() {
-    // 单调递增：每次创建图形 / 启动预览都 +1，确保新图形绘制在旧图形之上
     m_zCounter += 1.0;
     return m_zCounter;
 }

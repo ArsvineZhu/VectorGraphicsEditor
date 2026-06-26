@@ -3,18 +3,17 @@
 // ---------------------------------------------------------------------
 // @brief   文档级 JSON 持久化（仅本项目自定义 `.vgjson` 格式，非标准 SVG）
 // @details 提供整个画布（含画布尺寸与全部图形）的保存 / 加载能力。
-//          文件格式（version 1）：
+//          文件格式（version 2）：
 //          ```json
 //          {
-//            "version": 1,
+//            "version": 2,
 //            "canvas":  { "width": <number>, "height": <number> },
 //            "shapes":  [ <ShapeData JSON>, ... ]
 //          }
 //          ```
 //          单个图形的 JSON 形态见 `ShapeData::shapeDataToJson`。
 // @layer   core
-// @warning 文件版本号目前固定为 1；后续若格式不兼容升级请改为 2 并在
-//          `loadFromFile` 中按 version 分支处理。
+// @warning 文件版本号目前固定为 2；当前开发期不兼容旧版文件。
 // =====================================================================
 
 #pragma once

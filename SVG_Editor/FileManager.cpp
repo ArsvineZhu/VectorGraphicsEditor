@@ -23,7 +23,7 @@ bool FileManager::saveToFile(const QString& filePath, const DocumentData& docume
 
     // 文档根结构：version + canvas + shapes
     const QJsonObject root = {
-        {"version", 1},
+        {"version", 2},
         {"canvas",
          QJsonObject{
              {"width", document.canvasSize.width()},
@@ -65,6 +65,13 @@ std::optional<DocumentData> FileManager::loadFromFile(const QString& filePath, Q
     }
 
     const QJsonObject root = document.object();
+    if (root.value("version").toInt(-1) != 2) {
+        if (errorMessage != nullptr) {
+            *errorMessage = "Unsupported document version. Expected version 2.";
+        }
+        return std::nullopt;
+    }
+
     const QJsonObject canvas = root.value("canvas").toObject();
 
     DocumentData data;
@@ -72,14 +79,19 @@ std::optional<DocumentData> FileManager::loadFromFile(const QString& filePath, Q
     data.canvasSize = QSizeF(canvas.value("width").toDouble(1200.0), canvas.value("height").toDouble(800.0));
 
     const QJsonArray shapes = root.value("shapes").toArray();
+    int shapeIndex = 0;
     for (const auto& value : shapes) {
         const std::optional<ShapeData> shape = shapeDataFromJson(value.toObject());
         if (shape.has_value()) {
             data.shapes.append(*shape);
+            ++shapeIndex;
+            continue;
         }
-        // FIXME: 失败的单条 shape 当前被静默跳过；
-        //        若文件被外部工具破坏，用户感知不到具体哪一条出错。
-        //        改进方向：收集 (index, error) 列表，通过 errorMessage 报告。
+
+        if (errorMessage != nullptr) {
+            *errorMessage = QString("Invalid shape data at index %1.").arg(shapeIndex);
+        }
+        return std::nullopt;
     }
 
     return data;

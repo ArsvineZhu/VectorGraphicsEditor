@@ -20,6 +20,8 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 
+#include <algorithm>
+
 namespace {
 
 /// @brief 二选一返回字符串（与 CanvasView/MainWindow 中的同名工具一致）。
@@ -62,6 +64,7 @@ void PropertyPanel::setLanguage(AppLanguage language) {
 }
 
 void PropertyPanel::clearSelection() {
+    m_selectedCount = 0;
     m_hasSelection = false;
     updateSelectionTexts();
 
@@ -72,6 +75,7 @@ void PropertyPanel::clearSelection() {
     }
 
     // 禁用所有可交互控件
+    m_strokeEnabledCheck->setEnabled(false);
     m_strokeColorButton->setEnabled(false);
     m_fillColorButton->setEnabled(false);
     m_lineWidthSpin->setEnabled(false);
@@ -83,6 +87,7 @@ void PropertyPanel::clearSelection() {
 void PropertyPanel::setShapeData(const ShapeData& data) {
     // 关键：进入"程序更新中"状态，避免 setValue 触发的 valueChanged 形成回环
     m_updatingWidgets = true;
+    m_selectedCount = 1;
     m_currentData = normalizedShapeData(data);
     m_hasSelection = true;
 
@@ -90,9 +95,11 @@ void PropertyPanel::setShapeData(const ShapeData& data) {
     updateGeometryControls();
 
     // 启用样式相关控件；填充相关控件还要看 type 是否支持
-    m_lineWidthSpin->setEnabled(true);
-    m_lineStyleCombo->setEnabled(true);
-    m_strokeColorButton->setEnabled(true);
+    m_strokeEnabledCheck->setEnabled(true);
+    m_strokeEnabledCheck->setChecked(m_currentData.style.strokeEnabled);
+    m_lineWidthSpin->setEnabled(m_currentData.style.strokeEnabled);
+    m_lineStyleCombo->setEnabled(m_currentData.style.strokeEnabled);
+    m_strokeColorButton->setEnabled(m_currentData.style.strokeEnabled);
     m_fillEnabledCheck->setEnabled(shapeSupportsFill(m_currentData.type));
     m_fillColorButton->setEnabled(shapeSupportsFill(m_currentData.type));
 
@@ -103,6 +110,30 @@ void PropertyPanel::setShapeData(const ShapeData& data) {
         m_lineStyleCombo->setCurrentIndex(currentIndex);
     }
     m_fillEnabledCheck->setChecked(shapeSupportsFill(m_currentData.type) && m_currentData.style.fillEnabled);
+    for (int index = 0; index < 6; ++index) {
+        m_geometryEdits[index]->setEnabled(geometryEditingEnabled());
+    }
+    updateButtons();
+    m_updatingWidgets = false;
+}
+
+void PropertyPanel::setMultipleSelection(int selectedCount) {
+    m_updatingWidgets = true;
+    m_selectedCount = std::max(selectedCount, 2);
+    m_hasSelection = false;
+    updateSelectionTexts();
+
+    for (int index = 0; index < 6; ++index) {
+        m_geometryLabels[index]->hide();
+        m_geometryEdits[index]->hide();
+    }
+
+    m_strokeEnabledCheck->setEnabled(false);
+    m_strokeColorButton->setEnabled(false);
+    m_fillColorButton->setEnabled(false);
+    m_lineWidthSpin->setEnabled(false);
+    m_lineStyleCombo->setEnabled(false);
+    m_fillEnabledCheck->setEnabled(false);
     updateButtons();
     m_updatingWidgets = false;
 }
@@ -156,6 +187,18 @@ void PropertyPanel::setupUi() {
         emit shapeEdited(m_currentData);
     });
     m_formLayout->addRow(QString(), m_strokeColorButton);
+
+    m_strokeEnabledCheck = new QCheckBox(this);
+    connect(m_strokeEnabledCheck, &QCheckBox::checkStateChanged, this, [this](Qt::CheckState state) {
+        if (m_updatingWidgets || !m_hasSelection) {
+            return;
+        }
+
+        m_currentData.style.strokeEnabled = state == Qt::Checked;
+        updateButtons();
+        emit shapeEdited(m_currentData);
+    });
+    m_formLayout->addRow(QString(), m_strokeEnabledCheck);
 
     m_lineWidthSpin = new QDoubleSpinBox(this);
     m_lineWidthSpin->setRange(0.5, 20.0);
@@ -220,6 +263,9 @@ void PropertyPanel::updateButtons() {
     // 把当前颜色同步到按钮的 QSS，方便用户直接看到选中色
     m_strokeColorButton->setStyleSheet(colorButtonStyle(m_currentData.style.strokeColor));
     m_fillColorButton->setStyleSheet(colorButtonStyle(m_currentData.style.fillColor));
+    m_strokeColorButton->setEnabled(m_hasSelection && m_currentData.style.strokeEnabled);
+    m_lineWidthSpin->setEnabled(m_hasSelection && m_currentData.style.strokeEnabled);
+    m_lineStyleCombo->setEnabled(m_hasSelection && m_currentData.style.strokeEnabled);
     m_fillColorButton->setEnabled(m_hasSelection && shapeSupportsFill(m_currentData.type));
 }
 
@@ -227,12 +273,14 @@ void PropertyPanel::retranslateUi() {
     rebuildLineStyleCombo();
     updateSelectionTexts();
 
+    m_strokeEnabledCheck->setText(textForLanguage(m_language, "Enable Stroke", "启用描边"));
     m_strokeColorButton->setText(textForLanguage(m_language, "Stroke Color", "描边颜色"));
     m_fillColorButton->setText(textForLanguage(m_language, "Fill Color", "填充颜色"));
     m_fillEnabledCheck->setText(textForLanguage(m_language, "Enable Fill", "启用填充"));
 
     // 表单左侧标签需要单独刷新
     if (m_formLayout != nullptr) {
+        setFormLabelText(m_formLayout, m_strokeEnabledCheck, textForLanguage(m_language, "Stroke Enabled", "描边开关"));
         setFormLabelText(m_formLayout, m_strokeColorButton, textForLanguage(m_language, "Stroke", "描边"));
         setFormLabelText(m_formLayout, m_lineWidthSpin, textForLanguage(m_language, "Line Width", "线宽"));
         setFormLabelText(m_formLayout, m_lineStyleCombo, textForLanguage(m_language, "Line Style", "线型"));
@@ -242,6 +290,14 @@ void PropertyPanel::retranslateUi() {
 }
 
 void PropertyPanel::updateSelectionTexts() {
+    if (m_selectedCount > 1) {
+        m_titleLabel->setText(textForLanguage(m_language, "Multiple selection", "多选图形"));
+        m_hintLabel->setText(
+            textForLanguage(m_language, "Multiple selected shapes can be moved, scaled, rotated, or deleted together.",
+                            "当前已选中多个图形，可统一移动、缩放、旋转或删除。"));
+        return;
+    }
+
     if (!m_hasSelection) {
         m_titleLabel->setText(textForLanguage(m_language, "No selection", "未选中图形"));
         m_hintLabel->setText(textForLanguage(m_language, "Select a shape to edit geometry and style.",
@@ -250,8 +306,14 @@ void PropertyPanel::updateSelectionTexts() {
     }
 
     m_titleLabel->setText(shapeDisplayName(m_currentData.type, m_language));
-    m_hintLabel->setText(
-        textForLanguage(m_language, "Geometry updates are applied immediately.", "修改参数后会立即更新画布。"));
+    if (geometryEditingEnabled()) {
+        m_hintLabel->setText(
+            textForLanguage(m_language, "Geometry updates are applied immediately.", "修改参数后会立即更新画布。"));
+        return;
+    }
+
+    m_hintLabel->setText(textForLanguage(m_language, "This transformed shape only supports style edits.",
+                                         "当前图形已发生缩放或旋转，仅支持样式编辑。"));
 }
 
 void PropertyPanel::rebuildLineStyleCombo() {
@@ -278,6 +340,10 @@ void PropertyPanel::updateGeometryControls() {
     for (int index = 0; index < 6; ++index) {
         m_geometryLabels[index]->hide();
         m_geometryEdits[index]->hide();
+    }
+
+    if (!geometryEditingEnabled()) {
+        return;
     }
 
     // 局部辅助：显示一个字段并设置当前值
@@ -398,3 +464,5 @@ void PropertyPanel::emitEditedShape() {
     m_currentData = normalizedShapeData(data);
     emit shapeEdited(m_currentData);
 }
+
+bool PropertyPanel::geometryEditingEnabled() const { return m_hasSelection && m_currentData.transform.isIdentity(); }

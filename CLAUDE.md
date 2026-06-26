@@ -65,16 +65,18 @@ cmake --build --preset build-darwin-debug --target lint
 The codebase is a C++20 / Qt 6 (Widgets + Graphics View) vector editor. Four strict layers, lower layers never include upper ones:
 
 ```
-entry      main.cpp                     — QApplication, QSettings org/app name, event loop
-ui         MainWindow                   — menus, toolbar, QActionGroup, signal bridging
-  ↳        CanvasView (QGraphicsView)   — tool state machine, mouse events, doc I/O
-  ↳        PropertyPanel                — reactive editor for selected shape
-  ↳        TutorialDialog               — bilingual HTML help dialog
-  ↳        ShapeItem (QGraphicsObject)  — paint + hit-test for one shape
-core       ShapeData                    — pure data + JSON (de)serialization
-  ↳        FileManager                  — document-level JSON I/O
-  ↳        AppLanguage                  — i18n enum
-  ↳        ShapeFactory                 — create/clone helpers
+entry      main.cpp                            — QApplication, QSettings org/app name, event loop
+ui         MainWindow                          — menus, toolbar, QActionGroup, signal bridging, theme application
+  ↳        CanvasView (QGraphicsView)          — tool state machine, three interactive workflows, doc I/O, PNG export
+  ↳        PropertyPanel                       — reactive editor for selected shape (single-selection only)
+  ↳        TutorialDialog                      — bilingual HTML help dialog
+  ↳        ShapeItem (QGraphicsObject)         — paint + hit-test for one shape
+  ↳        SelectionTransformOverlayItem       — dashed bbox + 4 corner resize handles + rotate handle
+  ↳        ThemeMode / ThemeUtils              — light / dark / system theme (QPalette + Fusion style)
+core       ShapeData                           — pure data + JSON (de)serialization (only struct crossing every layer)
+  ↳        FileManager                         — document-level JSON I/O (versioned .vgjson, see below)
+  ↳        AppLanguage                         — i18n enum
+  ↳        ShapeFactory                        — create/clone helpers (QGraphicsItem is created here, not in CanvasView)
 ```
 
 **`core` is a static library** (`svg_editor_core`) linked by both the app and the tests. `ShapeData` is the only struct that crosses every layer boundary; it must remain free of `QGraphicsItem`/Widgets dependencies.
@@ -83,19 +85,27 @@ core       ShapeData                    — pure data + JSON (de)serialization
 
 - **Data/view separation**: `ShapeItem::shapeData()` pulls data out for serialization; `CanvasView` never reads internal `ShapeItem` state. To change what gets rendered, edit `ShapeItem::buildPath`. To change what gets saved, edit `shapeDataToJson` / `shapeDataFromJson` in `ShapeData.cpp`.
 - **JSON field names are a stable contract**. Renaming a field in `ShapeData.cpp` breaks every `.vgjson` on disk — coordinate with `ShapeData.h` and `FileManager.cpp` if you must.
-- **Two interactive workflows share `CanvasView::m_previewItem`**: drag (Line/Rectangle/Circle/Ellipse) and path (Polyline/Polygon). They are mutually exclusive; `setTool()` and `cancelDrawing()` must keep it that way. If you add a third workflow, it must follow the same `beginX / updateX / finishX` pattern.
+- **Three interactive workflows live in `CanvasView`** and are mutually exclusive. `setTool()` and `cancelDrawing()` must keep them clean:
+  1. **Drag workflow** (`beginDragShape` / `updateDragPreview` / `finishDragShape`) — used by `Line` / `Rectangle` / `Circle` / `Ellipse`. Shares `m_previewItem`.
+  2. **Path workflow** (`beginPathPoint` / `updatePathPreview` / `finishPathShape`) — used by `Polyline` / `Polygon`. Also shares `m_previewItem`.
+  3. **Transform session** (`beginTransformSession` / `updateTransformSession` / `finishTransformSession` / `cancelTransformSession`) — multi-select resize via 4 corner handles + rotate via top handle, driven by `SelectionTransformOverlayItem`. Uses `m_transformSession` (snapshot + restore on cancel), **not** `m_previewItem`. Shift-modifier snaps to 15° / equal aspect.
+  Both the drag and path workflows free `m_previewItem` on `cancelDrawing()`. The transform session is independent and is cancelled by `cancelTransformSession()` (called on tool switch and `Esc`).
+- **In-place move of selected items** uses `ShapeItem::setPendingMoveOffset` / `commitPendingMoveOffset` / `hasPendingMoveOffset`. The bbox display is updated immediately; the underlying `ShapeData` is only rewritten on `mouseReleaseEvent` to avoid noisy `shapeChanged` signals during drag.
 - **`CanvasView::nextZValue()`** is the only source of new z values; never hardcode `zValue` in scene code. `ShapeItem` adds a small per-item z delta on top to disambiguate hit-tests for same-z shapes.
 - **`PropertyPanel::m_updatingWidgets` is a reentrancy guard**, not a config flag. When the panel writes back to `ShapeData`, the model's signals would otherwise re-trigger the panel and re-enter `setShapeData`.
+- **Theme is applied at startup and re-applied on change**. `MainWindow` reads the persisted `ThemeMode` from `QSettings` in its constructor and calls `applyApplicationTheme(QApplication, mode)` immediately. User-initiated switches via the `Tutorial → Theme → System/Light/Dark` actions also re-apply on click. `System` mode additionally listens to `QStyleHints::colorSchemeChanged` so the palette follows OS dark-mode toggles. `m_selectionOverlay` colors are not theme-aware (always `#2d7ff9`).
 
 ### File format
 
-`.vgjson` (JSON, also accepts `.json`). See `FileManager.cpp` and the table in `ShapeData.h` for the exact schema. Key point: `points` and `rect` have **type-dependent semantics** — for `point`/`line`/`polyline`/`polygon` only `points` is meaningful; for `circle`/`ellipse`/`rectangle` only `rect` is.
+`.vgjson` (JSON, also accepts `.json`). Root: `{ "version": 2, "canvas": {width, height}, "shapes": [...] }`. **The load path requires `version == 2`** — older v1 files are rejected with `errorMessage = "Unsupported document version. Expected version 2."`. See `FileManager.cpp` and the schema table in `ShapeData.h` for per-shape field semantics.
 
-### Three FIXMEs currently in the code (do not silently remove)
+Key point: `points` and `rect` have **type-dependent semantics** — for `point`/`line`/`polyline`/`polygon` only `points` is meaningful; for `circle`/`ellipse`/`rectangle` only `rect` is. The single-shape deserialization failure path now surfaces the offending index via `errorMessage` (was previously silent — see commit history if you need to reintroduce tolerance).
 
-1. `ShapeData.cpp` — `shapeTypeToString` falls through to `"unknown"`. If you add a `ShapeType` value, you must add a case here (GCC `-Wswitch` will warn).
-2. `FileManager.cpp` — single shape deserialization failures are silently skipped. If you change this, surface the error in `errorMessage` rather than `qWarning`.
-3. (Additional FIXME present — grep `// FIXME:` for current locations.)
+### One FIXME currently in the code (do not silently remove)
+
+1. `ShapeData.cpp:116` — `shapeTypeToString` falls through to `"unknown"`. If you add a `ShapeType` value, you must add a case here (GCC `-Wswitch` will warn).
+
+(`FileManager.cpp` previously had a FIXME for silently-skipped bad shapes; that has since been fixed and the marker removed. If you re-introduce silent tolerance, the original rationale is in the file header's `@details` block.)
 
 ### Tooling config files
 

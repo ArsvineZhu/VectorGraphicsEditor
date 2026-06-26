@@ -12,19 +12,23 @@
 
 #include <QAction>
 #include <QActionGroup>
+#include <QApplication>
 #include <QDockWidget>
 #include <QFileDialog>
 #include <QFileInfo>
-#include <QSettings>
+#include <QGuiApplication>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QSettings>
 #include <QStatusBar>
+#include <QStyleHints>
 #include <QToolBar>
 
 #include "FileManager.h"
 #include "PropertyPanel.h"
 #include "ShapeItem.h"
+#include "ThemeUtils.h"
 #include "TutorialDialog.h"
 
 namespace {
@@ -62,6 +66,7 @@ QString toolLabel(CanvasView::Tool tool, AppLanguage language) {
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     // 1) 读取上次保存的语言（默认 zh-CN）
     m_language = loadLanguage();
+    m_themeMode = loadThemeMode();
     // 2) 构造 UI 子模块与 dock
     setupUi();
     // 3) 创建所有 QAction 与 ActionGroup（含快捷键）
@@ -72,6 +77,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     setupMenus();
     // 6) 桥接所有信号槽
     connectSignals();
+    setThemeMode(m_themeMode);
     // 7) 通知所有子模块切换语言并刷新自身
     setLanguage(m_language);
     statusBar()->showMessage(textForLanguage(m_language, "Ready", "就绪"));
@@ -87,6 +93,16 @@ AppLanguage MainWindow::loadLanguage() const {
 void MainWindow::saveLanguage() const {
     QSettings settings;
     settings.setValue("ui/language", m_language == AppLanguage::English ? "en" : "zh-CN");
+}
+
+ThemeMode MainWindow::loadThemeMode() const {
+    const QSettings settings;
+    return themeModeFromSettingsValue(settings.value("ui/themeMode", "system").toString());
+}
+
+void MainWindow::saveThemeMode() const {
+    QSettings settings;
+    settings.setValue("ui/themeMode", themeModeToSettingsValue(m_themeMode));
 }
 
 void MainWindow::setLanguage(AppLanguage language) {
@@ -108,6 +124,22 @@ void MainWindow::setLanguage(AppLanguage language) {
 
     retranslateUi();
     statusBar()->showMessage(textForLanguage(m_language, "Language updated.", "界面语言已更新。"), 2500);
+}
+
+void MainWindow::setThemeMode(ThemeMode mode) {
+    m_themeMode = mode;
+    saveThemeMode();
+    applyApplicationTheme(*static_cast<QApplication*>(QApplication::instance()), mode);
+
+    if (m_themeSystemAction != nullptr) {
+        m_themeSystemAction->setChecked(mode == ThemeMode::System);
+    }
+    if (m_themeLightAction != nullptr) {
+        m_themeLightAction->setChecked(mode == ThemeMode::Light);
+    }
+    if (m_themeDarkAction != nullptr) {
+        m_themeDarkAction->setChecked(mode == ThemeMode::Dark);
+    }
 }
 
 void MainWindow::setupUi() {
@@ -143,6 +175,9 @@ void MainWindow::setupActions() {
     m_pasteAction = new QAction(this);
     m_clearAction = new QAction(this);
     m_showTutorialAction = new QAction(this);
+    m_themeSystemAction = new QAction(this);
+    m_themeLightAction = new QAction(this);
+    m_themeDarkAction = new QAction(this);
     m_englishAction = new QAction(this);
     m_simplifiedChineseAction = new QAction(this);
 
@@ -157,6 +192,15 @@ void MainWindow::setupActions() {
 
     m_toolActionGroup = new QActionGroup(this);
     m_toolActionGroup->setExclusive(true);
+
+    m_themeActionGroup = new QActionGroup(this);
+    m_themeActionGroup->setExclusive(true);
+    m_themeSystemAction->setCheckable(true);
+    m_themeLightAction->setCheckable(true);
+    m_themeDarkAction->setCheckable(true);
+    m_themeActionGroup->addAction(m_themeSystemAction);
+    m_themeActionGroup->addAction(m_themeLightAction);
+    m_themeActionGroup->addAction(m_themeDarkAction);
 
     m_languageActionGroup = new QActionGroup(this);
     m_languageActionGroup->setExclusive(true);
@@ -181,6 +225,13 @@ void MainWindow::setupMenus() {
     m_editMenu->addAction(m_deleteAction);
     m_editMenu->addAction(m_clearAction);
 
+    m_viewMenu = menuBar()->addMenu(QString());
+    m_viewMenu->addAction(m_togglePropertyDockAction);
+    m_themeMenu = m_viewMenu->addMenu(QString());
+    m_themeMenu->addAction(m_themeSystemAction);
+    m_themeMenu->addAction(m_themeLightAction);
+    m_themeMenu->addAction(m_themeDarkAction);
+
     m_toolMenu = menuBar()->addMenu(QString());
     m_selectionToolMenu = m_toolMenu->addMenu(QString());
     m_selectionToolMenu->addAction(findToolAction(CanvasView::Tool::Select));
@@ -195,9 +246,6 @@ void MainWindow::setupMenus() {
     m_closedShapeToolMenu->addAction(findToolAction(CanvasView::Tool::Ellipse));
     m_closedShapeToolMenu->addAction(findToolAction(CanvasView::Tool::Rectangle));
     m_closedShapeToolMenu->addAction(findToolAction(CanvasView::Tool::Polygon));
-
-    m_panelToolMenu = m_toolMenu->addMenu(QString());
-    m_panelToolMenu->addAction(m_togglePropertyDockAction);
 
     // Tutorial 菜单标题在英文 / 中文下都保留 "Tutorial"（与 HTML 手册保持一致）
     m_tutorialMenu = menuBar()->addMenu("Tutorial");
@@ -252,7 +300,7 @@ void MainWindow::connectSignals() {
     connect(m_showTutorialAction, &QAction::triggered, this, &MainWindow::showTutorial);
 
     // Edit 菜单（直接桥到 CanvasView）
-    connect(m_deleteAction, &QAction::triggered, m_canvasView, &CanvasView::deleteSelectedItem);
+    connect(m_deleteAction, &QAction::triggered, this, &MainWindow::deleteSelection);
     connect(m_copyAction, &QAction::triggered, m_canvasView, &CanvasView::copySelectedItem);
     connect(m_pasteAction, &QAction::triggered, m_canvasView, &CanvasView::pasteCopiedItem);
     // Clear Canvas 还需要清空当前文件路径和更新窗口标题，所以在 MainWindow 内联处理
@@ -263,8 +311,10 @@ void MainWindow::connectSignals() {
     });
 
     // 画布 → 属性面板 / 状态栏
-    connect(m_canvasView, &CanvasView::selectedShapeChanged, this, [this](ShapeItem* item) {
-        if (item != nullptr) {
+    connect(m_canvasView, &CanvasView::selectionStateChanged, this, [this](ShapeItem* item, int selectedCount) {
+        if (selectedCount > 1) {
+            m_propertyPanel->setMultipleSelection(selectedCount);
+        } else if (item != nullptr) {
             m_propertyPanel->setShapeData(item->shapeData());
         } else {
             m_propertyPanel->clearSelection();
@@ -277,20 +327,33 @@ void MainWindow::connectSignals() {
     // 属性面板 → 画布（回写修改）
     connect(m_propertyPanel, &PropertyPanel::shapeEdited, m_canvasView, &CanvasView::updateSelectedShape);
 
+    connect(m_canvasView, &CanvasView::deleteSelectionRequested, this, &MainWindow::deleteSelection);
+
     // 语言菜单
     connect(m_englishAction, &QAction::triggered, this, [this]() { setLanguage(AppLanguage::English); });
     connect(m_simplifiedChineseAction, &QAction::triggered, this,
             [this]() { setLanguage(AppLanguage::SimplifiedChinese); });
+
+    connect(m_themeSystemAction, &QAction::triggered, this, [this]() { setThemeMode(ThemeMode::System); });
+    connect(m_themeLightAction, &QAction::triggered, this, [this]() { setThemeMode(ThemeMode::Light); });
+    connect(m_themeDarkAction, &QAction::triggered, this, [this]() { setThemeMode(ThemeMode::Dark); });
+
+    connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, this, [this](Qt::ColorScheme) {
+        if (m_themeMode == ThemeMode::System) {
+            applyApplicationTheme(*static_cast<QApplication*>(QApplication::instance()), ThemeMode::System);
+        }
+    });
 }
 
 void MainWindow::retranslateUi() {
     m_fileMenu->setTitle(textForLanguage(m_language, "File", "文件"));
     m_editMenu->setTitle(textForLanguage(m_language, "Edit", "编辑"));
+    m_viewMenu->setTitle(textForLanguage(m_language, "View", "视图"));
     m_toolMenu->setTitle(textForLanguage(m_language, "Tools", "工具"));
     m_selectionToolMenu->setTitle(textForLanguage(m_language, "Selection", "选择工具"));
     m_openShapeToolMenu->setTitle(textForLanguage(m_language, "Open Shapes", "开放图形"));
     m_closedShapeToolMenu->setTitle(textForLanguage(m_language, "Closed Shapes", "封闭图形"));
-    m_panelToolMenu->setTitle(textForLanguage(m_language, "Panels", "面板"));
+    m_themeMenu->setTitle(textForLanguage(m_language, "Theme", "主题"));
     // Tutorial 标题保持原样（与 HTML 手册标题一致）
     m_tutorialMenu->setTitle("Tutorial");
     m_languageMenu->setTitle(textForLanguage(m_language, "Language", "语言"));
@@ -308,6 +371,9 @@ void MainWindow::retranslateUi() {
     if (m_togglePropertyDockAction != nullptr) {
         m_togglePropertyDockAction->setText(textForLanguage(m_language, "Properties Panel", "属性面板"));
     }
+    m_themeSystemAction->setText(textForLanguage(m_language, "Auto Theme", "自动主题"));
+    m_themeLightAction->setText(textForLanguage(m_language, "Light", "浅色"));
+    m_themeDarkAction->setText(textForLanguage(m_language, "Dark", "深色"));
     m_englishAction->setText("English");
     m_simplifiedChineseAction->setText(QString::fromUtf8("简体中文"));
 
@@ -333,6 +399,26 @@ void MainWindow::updateWindowTitle() {
 void MainWindow::showTutorial() {
     m_tutorialDialog->setLanguage(m_language);
     m_tutorialDialog->exec();
+}
+
+void MainWindow::deleteSelection() {
+    const int selectedCount = m_canvasView->selectedShapeCount();
+    if (selectedCount <= 0) {
+        return;
+    }
+
+    if (selectedCount > 1) {
+        const QMessageBox::StandardButton reply = QMessageBox::question(
+            this, textForLanguage(m_language, "Delete Multiple Shapes", "删除多个图形"),
+            textForLanguage(m_language, "Delete %1 selected shapes?", "确定删除已选中的 %1 个图形吗？")
+                .arg(selectedCount),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (reply != QMessageBox::Yes) {
+            return;
+        }
+    }
+
+    m_canvasView->deleteSelectedItems();
 }
 
 QAction* MainWindow::createToolAction(CanvasView::Tool tool) {

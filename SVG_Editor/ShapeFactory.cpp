@@ -25,8 +25,10 @@ ShapeData ShapeFactory::cloneWithOffset(const ShapeData& source, const QPointF& 
     copy.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     // 2) z 自增 1，让粘贴的图形绘制在原图之上
     copy.zValue += 1.0;
-    // 3) 几何平移
-    translateShapeData(copy, offset);
+    // 3) 以场景空间平移整份图形（含 transform）
+    QTransform translation;
+    translation.translate(offset.x(), offset.y());
+    applyTransformToShapeData(copy, translation);
     // 4) 再次归一化，保证圆仍为正方形外接框
     return normalizedShapeData(copy);
 }

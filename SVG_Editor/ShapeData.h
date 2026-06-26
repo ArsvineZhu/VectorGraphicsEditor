@@ -21,6 +21,7 @@
 #include <QPointF>
 #include <QRectF>
 #include <QString>
+#include <QTransform>
 #include <Qt>
 #include <QVector>
 
@@ -49,6 +50,7 @@ enum class ShapeType : std::uint8_t {
 /// @brief 图形的视觉样式（描边 + 填充）。
 /// @note  字段顺序与 JSON 序列化顺序一致，请勿随意调整以保持输出可读。
 struct ShapeStyle {
+    bool strokeEnabled = true;                ///< 是否启用描边；false 时绘制使用 NoPen
     QColor strokeColor = Qt::black;           ///< 描边颜色；alpha 受 Qt 平台支持
     qreal strokeWidth = 2.0;                  ///< 描边宽度（像素），范围 [0.5, +∞)（加载时夹紧）
     Qt::PenStyle strokeStyle = Qt::SolidLine; ///< 描边线型：Solid/Dash/Dot/DashDot
@@ -73,6 +75,7 @@ struct ShapeData {
     QVector<QPointF> points;               ///< 点列；语义见上方表格
     QRectF rect;                           ///< 包围盒/外接矩形；语义见上方表格
     ShapeStyle style;                      ///< 视觉样式
+    QTransform transform;                  ///< 基础几何到场景坐标的仿射变换
     qreal zValue = 0.0;                    ///< 绘制顺序，值越大越靠前
 };
 
@@ -128,6 +131,12 @@ QRectF pointsBoundingRect(const QVector<QPointF>& points);
 /// @param data  目标图形（in-place 修改）
 /// @param delta 平移量（场景坐标系）
 void translateShapeData(ShapeData& data, const QPointF& delta);
+
+/// @brief 在场景坐标系中对图形附加一个仿射变换。
+/// @details 变换会左乘到现有 `ShapeData::transform`，保持"基础几何 + 变换"模型。
+/// @param data       目标图形（in-place 修改）
+/// @param transform  场景空间仿射变换
+void applyTransformToShapeData(ShapeData& data, const QTransform& transform);
 
 /// @brief 将图形序列化为 JSON 对象。
 /// @details 序列化前会自动调用 normalizedShapeData，确保 rect 非退化。

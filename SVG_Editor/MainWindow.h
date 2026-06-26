@@ -23,6 +23,7 @@
 
 #include "AppLanguage.h"
 #include "CanvasView.h"
+#include "ThemeMode.h"
 
 class PropertyPanel;
 class QAction;
@@ -46,8 +47,17 @@ class MainWindow : public QMainWindow {
     /// @brief 把当前语言写入 QSettings，key = "ui/language"。
     void saveLanguage() const;
 
+    /// @brief 从 QSettings 读取主题模式；缺失则默认 System。
+    ThemeMode loadThemeMode() const;
+
+    /// @brief 把当前主题模式写入 QSettings，key = "ui/themeMode"。
+    void saveThemeMode() const;
+
     /// @brief 切换界面语言：保存持久化、通知子模块、刷新菜单勾选、retranslateUi。
     void setLanguage(AppLanguage language);
+
+    /// @brief 应用主题模式：写入持久化、同步菜单勾选并刷新 palette。
+    void setThemeMode(ThemeMode mode);
 
     /// @brief 创建画布 / 属性面板 dock / 教程对话框。
     void setupUi();
@@ -72,6 +82,9 @@ class MainWindow : public QMainWindow {
 
     /// @brief 弹出操作手册对话框。
     void showTutorial();
+
+    /// @brief 删除当前选择；多选时弹确认框。
+    void deleteSelection();
 
     /// @brief 工具按钮工厂：创建 + 加入工具 ActionGroup + 绑定 setTool 槽。
     /// @param tool 工具枚举
@@ -116,6 +129,8 @@ class MainWindow : public QMainWindow {
     QMenu* m_fileMenu = nullptr;
     /// @brief Edit 菜单
     QMenu* m_editMenu = nullptr;
+    /// @brief View 菜单
+    QMenu* m_viewMenu = nullptr;
     /// @brief Tools 菜单
     QMenu* m_toolMenu = nullptr;
     /// @brief Tools → Selection
@@ -124,8 +139,8 @@ class MainWindow : public QMainWindow {
     QMenu* m_openShapeToolMenu = nullptr;
     /// @brief Tools → Closed Shapes
     QMenu* m_closedShapeToolMenu = nullptr;
-    /// @brief Tools → Panels
-    QMenu* m_panelToolMenu = nullptr;
+    /// @brief View → Theme
+    QMenu* m_themeMenu = nullptr;
     /// @brief Tutorial 菜单
     QMenu* m_tutorialMenu = nullptr;
     /// @brief Tutorial 菜单下的语言子菜单
@@ -151,8 +166,14 @@ class MainWindow : public QMainWindow {
     QAction* m_clearAction = nullptr;
     /// @brief Tutorial → Operation Manual
     QAction* m_showTutorialAction = nullptr;
-    /// @brief Tools → Show/Hide Properties（来自 QDockWidget::toggleViewAction）
+    /// @brief View → Show/Hide Properties（来自 QDockWidget::toggleViewAction）
     QAction* m_togglePropertyDockAction = nullptr;
+    /// @brief Theme → System
+    QAction* m_themeSystemAction = nullptr;
+    /// @brief Theme → Light
+    QAction* m_themeLightAction = nullptr;
+    /// @brief Theme → Dark
+    QAction* m_themeDarkAction = nullptr;
     /// @brief Language → English
     QAction* m_englishAction = nullptr;
     /// @brief Language → 简体中文
@@ -160,10 +181,14 @@ class MainWindow : public QMainWindow {
 
     /// @brief 工具按钮的互斥组（保证只有一个工具处于选中态）
     QActionGroup* m_toolActionGroup = nullptr;
+    /// @brief 主题切换互斥组
+    QActionGroup* m_themeActionGroup = nullptr;
     /// @brief 语言切换的互斥组
     QActionGroup* m_languageActionGroup = nullptr;
     /// @brief 当前语言
     AppLanguage m_language = AppLanguage::SimplifiedChinese;
+    /// @brief 当前主题模式
+    ThemeMode m_themeMode = ThemeMode::System;
     /// @brief 当前已打开文件路径；空表示 Untitled
     QString m_currentFilePath;
 };

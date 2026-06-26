@@ -45,6 +45,9 @@ class PropertyPanel : public QWidget {
     /// @details 调用期间 m_updatingWidgets == true，控件的 valueChanged 不会触发 emit。
     void setShapeData(const ShapeData& data);
 
+    /// @brief 进入"多选"态：显示数量提示，禁用几何与样式编辑。
+    void setMultipleSelection(int selectedCount);
+
   signals:
     /// @brief 任何控件被用户修改后发出（携带最新的 ShapeData 完整快照）。
     void shapeEdited(const ShapeData& data);
@@ -74,6 +77,9 @@ class PropertyPanel : public QWidget {
     /// @brief 重建 m_lineStyleCombo 的条目（语言变更时需要重写标签）。
     void rebuildLineStyleCombo();
 
+    /// @brief 当前单选图形是否允许继续编辑几何参数。
+    bool geometryEditingEnabled() const;
+
     /// @brief 面板顶部标题
     QLabel* m_titleLabel = nullptr;
     /// @brief 标题下方的提示文本
@@ -86,6 +92,8 @@ class PropertyPanel : public QWidget {
     QPushButton* m_strokeColorButton = nullptr;
     /// @brief 填充颜色按钮
     QPushButton* m_fillColorButton = nullptr;
+    /// @brief 是否启用描边
+    QCheckBox* m_strokeEnabledCheck = nullptr;
     /// @brief 描边宽度输入（范围 0.5~20.0，精度 1 位）
     QDoubleSpinBox* m_lineWidthSpin = nullptr;
     /// @brief 描边线型下拉框（Solid / Dash / Dot / DashDot）
@@ -99,6 +107,8 @@ class PropertyPanel : public QWidget {
     ShapeData m_currentData;
     /// @brief 当前界面语言
     AppLanguage m_language = AppLanguage::SimplifiedChinese;
+    /// @brief 当前选中数量
+    int m_selectedCount = 0;
     /// @brief 是否处于"有选中"态
     bool m_hasSelection = false;
     /// @brief 防重入标志；setShapeData / rebuildLineStyleCombo 期间为 true

@@ -35,6 +35,19 @@ QPainterPath ShapeItem::shape() const {
         return path;
     }
 
+    if (!m_data.style.strokeEnabled) {
+        if (shapeSupportsFill(m_data.type) && m_data.style.fillEnabled) {
+            return path;
+        }
+
+        const qreal fallbackWidth = std::max<qreal>(8.0, m_data.style.strokeWidth + 6.0);
+        QPainterPathStroker stroker;
+        stroker.setWidth(fallbackWidth);
+        stroker.setCapStyle(Qt::RoundCap);
+        stroker.setJoinStyle(Qt::RoundJoin);
+        return stroker.createStroke(path);
+    }
+
     // 命中区域沿描边方向外扩，至少 8 像素、否则按 strokeWidth+6 决定
     const qreal strokerWidth = std::max<qreal>(8.0, m_data.style.strokeWidth + 6.0);
     QPainterPathStroker stroker;
@@ -52,6 +65,7 @@ QPainterPath ShapeItem::shape() const {
 
 void ShapeItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget*) {
     painter->setRenderHint(QPainter::Antialiasing, true);
+    painter->save();
 
     QPen pen = buildPen();
     painter->setPen(pen);
@@ -60,45 +74,7 @@ void ShapeItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidge
     const bool fillEnabled = shapeSupportsFill(m_data.type) && m_data.style.fillEnabled;
     painter->setBrush(fillEnabled ? QBrush(m_data.style.fillColor) : Qt::NoBrush);
 
-    switch (m_data.type) {
-    case ShapeType::Point: {
-        if (m_data.points.isEmpty()) {
-            break;
-        }
-        // Point 用一个小圆点表示；半径最小 3 像素以保证可点击
-        const QPointF point = m_data.points.first();
-        const qreal radius = std::max<qreal>(3.0, m_data.style.strokeWidth * 1.5);
-        painter->drawEllipse(point, radius, radius);
-        break;
-    }
-    case ShapeType::Line:
-        // Line：要求至少 2 个点，否则跳过
-        if (m_data.points.size() >= 2) {
-            painter->drawLine(m_data.points.at(0), m_data.points.at(1));
-        }
-        break;
-    case ShapeType::Polyline:
-        // 折线：≥2 个点
-        if (m_data.points.size() >= 2) {
-            painter->drawPolyline(m_data.points.constData(), static_cast<int>(m_data.points.size()));
-        }
-        break;
-    case ShapeType::Circle:
-    case ShapeType::Ellipse:
-        painter->drawEllipse(m_data.rect);
-        break;
-    case ShapeType::Rectangle:
-        painter->drawRect(m_data.rect);
-        break;
-    case ShapeType::Polygon:
-        // 关键差异：预览模式只画未闭合折线，正式绘制时需要 ≥3 个顶点才能闭合
-        if (m_previewMode && m_data.points.size() >= 2) {
-            painter->drawPolyline(m_data.points.constData(), static_cast<int>(m_data.points.size()));
-        } else if (m_data.points.size() >= 3) {
-            painter->drawPolygon(m_data.points.constData(), static_cast<int>(m_data.points.size()));
-        }
-        break;
-    }
+    painter->drawPath(buildPath());
 
     // 选中时画蓝色虚线选框；预览模式不画
     if (isSelected() && !m_previewMode) {
@@ -110,8 +86,9 @@ void ShapeItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidge
         painter->setPen(selectionPen);
         painter->setBrush(Qt::NoBrush);
         // 在 path 外扩 6 像素作为高亮范围
-        painter->drawRect(buildPath().boundingRect().adjusted(-6.0, -6.0, 6.0, 6.0));
+        painter->drawRect(shape().boundingRect().adjusted(-6.0, -6.0, 6.0, 6.0));
     }
+    painter->restore();
 }
 
 ShapeData ShapeItem::shapeData() const { return m_data; }
@@ -132,6 +109,17 @@ void ShapeItem::setPreviewMode(bool enabled) {
     update();
 }
 
+bool ShapeItem::hasPendingMoveOffset() const { return !qFuzzyIsNull(pos().x()) || !qFuzzyIsNull(pos().y()); }
+
+void ShapeItem::commitPendingMoveOffset() {
+    if (m_previewMode || m_committingMove || !hasPendingMoveOffset()) {
+        return;
+    }
+
+    commitMoveOffset(pos());
+    emit shapeChanged(this);
+}
+
 void ShapeItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
     QGraphicsObject::mouseReleaseEvent(event);
 
@@ -141,14 +129,14 @@ void ShapeItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
     }
 
     // Qt 通过修改 pos() 实现 ItemIsMovable；此时 pos() 即为按下→释放的累计位移
-    const QPointF delta = pos();
-    if (!qFuzzyIsNull(delta.x()) || !qFuzzyIsNull(delta.y())) {
-        commitMoveOffset(delta);
-        emit shapeChanged(this);
+    if (hasPendingMoveOffset()) {
+        commitPendingMoveOffset();
     }
 }
 
-QPainterPath ShapeItem::buildPath() const {
+QPainterPath ShapeItem::buildPath() const { return m_data.transform.map(buildBasePath()); }
+
+QPainterPath ShapeItem::buildBasePath() const {
     QPainterPath path;
 
     switch (m_data.type) {
@@ -198,6 +186,10 @@ QPainterPath ShapeItem::buildPath() const {
 }
 
 QPen ShapeItem::buildPen() const {
+    if (!m_previewMode && !m_data.style.strokeEnabled) {
+        return Qt::NoPen;
+    }
+
     QPen pen(m_data.style.strokeColor, m_data.style.strokeWidth, m_data.style.strokeStyle, Qt::RoundCap, Qt::RoundJoin);
     if (m_previewMode) {
         // 预览模式：颜色提亮 15%、改为虚线，提示"尚未提交"
@@ -213,8 +205,9 @@ void ShapeItem::commitMoveOffset(const QPointF& delta) {
     }
 
     prepareGeometryChange();
-    // 1) 把位移从 Qt 的 pos() 转移到数据本身的坐标
-    translateShapeData(m_data, delta);
+    QTransform translation;
+    translation.translate(delta.x(), delta.y());
+    applyTransformToShapeData(m_data, translation);
     // 2) 通过 m_committingMove 抑制"setPos(0,0) 触发 mouseReleaseEvent 再提交"
     m_committingMove = true;
     setPos(QPointF());

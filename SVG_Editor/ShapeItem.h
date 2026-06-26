@@ -59,6 +59,12 @@ class ShapeItem : public QGraphicsObject {
     ///          - 描边色变浅 + 改为虚线
     void setPreviewMode(bool enabled);
 
+    /// @brief 是否存在尚未写回 ShapeData 的 scene 位移。
+    bool hasPendingMoveOffset() const;
+
+    /// @brief 把当前 pos() 累积位移写回 ShapeData。
+    void commitPendingMoveOffset();
+
   signals:
     /// @brief 当用户拖动结束后发出（含选中图形的位移提交）。
     /// @param item 发生变化的 ShapeItem 自身
@@ -71,6 +77,9 @@ class ShapeItem : public QGraphicsObject {
   private:
     /// @brief 根据 m_data 与 m_previewMode 构造用于绘制 / 命中测试的路径。
     QPainterPath buildPath() const;
+
+    /// @brief 构造未应用 transform 的基础几何路径。
+    QPainterPath buildBasePath() const;
 
     /// @brief 根据 m_data.style 构造 QPen；预览模式下颜色变浅、改为虚线。
     QPen buildPen() const;
