@@ -65,18 +65,23 @@ cmake --build --preset build-darwin-debug --target lint
 The codebase is a C++20 / Qt 6 (Widgets + Graphics View) vector editor. Four strict layers, lower layers never include upper ones:
 
 ```
-entry      main.cpp                            — QApplication, QSettings org/app name, event loop
-ui         MainWindow                          — menus, toolbar, QActionGroup, signal bridging, theme application
-  ↳        CanvasView (QGraphicsView)          — tool state machine, three interactive workflows, doc I/O, PNG export
-  ↳        PropertyPanel                       — reactive editor for selected shape (single-selection only)
-  ↳        TutorialDialog                      — bilingual HTML help dialog
-  ↳        ShapeItem (QGraphicsObject)         — paint + hit-test for one shape
-  ↳        SelectionTransformOverlayItem       — dashed bbox + 4 corner resize handles
-  ↳        ThemeMode / ThemeUtils              — light / dark / system theme (QPalette + Fusion style)
-core       ShapeData                           — pure data + JSON (de)serialization (only struct crossing every layer)
-  ↳        FileManager                         — document-level JSON I/O (versioned .vgjson, see below)
-  ↳        AppLanguage                         — i18n enum
-  ↳        ShapeFactory                        — create/clone helpers (QGraphicsItem is created here, not in CanvasView)
+app        app/main.cpp                       — QApplication, QSettings org/app name, event loop
+core       core/ShapeData                     — pure data + JSON (de)serialization (only struct crossing every layer)
+  ↳        core/FileManager                   — document-level JSON I/O (versioned .vgjson, see below)
+  ↳        core/AppLanguage + core/I18n       — language enum and localized strings
+  ↳        core/CanvasGeometry                — transform helpers shared by canvas interaction/tests
+  ↳        core/SelectionFrame                — orthogonal interaction frame math
+canvas     canvas/CanvasView*                 — tool state machine, three interactive workflows, doc I/O, PNG export
+  ↳        canvas/DragCreationStrategy        — drag-created shapes
+  ↳        canvas/PathCreationStrategy        — polyline/polygon creation
+  ↳        canvas/MultiShapeSession           — multi-select snapshot/cancel support
+  ↳        canvas/SelectionTransformOverlayItem — dashed bbox + 4 corner resize handles
+graphics   graphics/ShapeItem                 — paint + hit-test for one shape
+  ↳        graphics/ShapeFactory              — create/clone helpers bridging ShapeData to ShapeItem
+ui         ui/MainWindow                      — menus, toolbar, QActionGroup, signal bridging, theme application
+  ↳        ui/PropertyPanel                   — reactive editor for selected shape (single-selection only)
+  ↳        ui/TutorialDialog                  — bilingual HTML help dialog
+  ↳        ui/ThemeMode / ui/ThemeUtils       — light / dark / system theme (QPalette + Fusion style)
 ```
 
 **`core` is a static library** (`svg_editor_core`) linked by both the app and the tests. `ShapeData` is the only struct that crosses every layer boundary; it must remain free of `QGraphicsItem`/Widgets dependencies.
@@ -116,9 +121,11 @@ Key point: `points` and `rect` have **type-dependent semantics** — for `point`
 
 ### Tests
 
-Two binaries, both linked against `svg_editor_core` + `Qt6::Test`:
+Test sources now mirror production modules under `tests/core/` and `tests/graphics/`. Binaries remain linked against `svg_editor_core` + `Qt6::Test`:
 
-- `shape_data_tests` — `ShapeData` / normalization / JSON roundtrip
-- `file_manager_tests` — `FileManager` roundtrip / missing fields / corrupt files
+- `shape_data_tests` — `tests/core/ShapeDataTests.cpp`
+- `file_manager_tests` — `tests/core/FileManagerTests.cpp`
+- `canvas_geometry_tests` — `tests/core/CanvasGeometryTests.cpp`
+- `shape_item_tests` — `tests/graphics/ShapeItemTests.cpp`
 
 Both register as CTest cases with the same names. Filter with `ctest -R <name>` or run the binary directly for debugger attachment.
