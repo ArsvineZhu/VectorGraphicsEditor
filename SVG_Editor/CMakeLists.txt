@@ -1,53 +1,53 @@
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
 
 set(SVG_EDITOR_CORE_SOURCES
-  AppLanguage.h
-  AppLanguage.cpp
-  CanvasGeometry.h
-  CanvasGeometry.cpp
-  CanvasViewConstants.h
-  I18n.h
-  I18n.cpp
-  SelectionFrame.cpp
-  SelectionFrame.h
-  ShapeData.cpp
-  ShapeData.h
-  FileManager.cpp
-  FileManager.h
+  core/AppLanguage.h
+  core/AppLanguage.cpp
+  core/CanvasGeometry.h
+  core/CanvasGeometry.cpp
+  core/CanvasViewConstants.h
+  core/I18n.h
+  core/I18n.cpp
+  core/SelectionFrame.cpp
+  core/SelectionFrame.h
+  core/ShapeData.cpp
+  core/ShapeData.h
+  core/FileManager.cpp
+  core/FileManager.h
 )
 
 set(SVG_EDITOR_APP_SOURCES
-  CreationStrategy.h
-  DragCreationStrategy.h
-  DragCreationStrategy.cpp
-  PathCreationStrategy.h
-  PathCreationStrategy.cpp
-  MultiShapeSession.h
-  MultiShapeSession.cpp
-  MainWindowActions.h
-  MainWindowActions.cpp
-  PropertyPanelGeometryFields.h
-  TutorialManualContent.h
-  main.cpp
-  ThemeMode.h
-  ThemeUtils.cpp
-  ThemeUtils.h
-  MainWindow.cpp
-  MainWindow.h
-  TutorialDialog.cpp
-  TutorialDialog.h
-  CanvasViewCore.cpp
-  CanvasViewInput.cpp
-  CanvasViewSelection.cpp
-  CanvasView.h
-  SelectionTransformOverlayItem.cpp
-  SelectionTransformOverlayItem.h
-  ShapeItem.cpp
-  ShapeItem.h
-  ShapeFactory.cpp
-  ShapeFactory.h
-  PropertyPanel.cpp
-  PropertyPanel.h
+  app/main.cpp
+  canvas/CanvasView.h
+  canvas/CanvasViewCore.cpp
+  canvas/CanvasViewInput.cpp
+  canvas/CanvasViewSelection.cpp
+  canvas/CreationStrategy.h
+  canvas/DragCreationStrategy.h
+  canvas/DragCreationStrategy.cpp
+  canvas/PathCreationStrategy.h
+  canvas/PathCreationStrategy.cpp
+  canvas/MultiShapeSession.h
+  canvas/MultiShapeSession.cpp
+  canvas/SelectionTransformOverlayItem.h
+  canvas/SelectionTransformOverlayItem.cpp
+  graphics/ShapeItem.h
+  graphics/ShapeItem.cpp
+  graphics/ShapeFactory.h
+  graphics/ShapeFactory.cpp
+  ui/MainWindow.h
+  ui/MainWindow.cpp
+  ui/MainWindowActions.h
+  ui/MainWindowActions.cpp
+  ui/PropertyPanel.h
+  ui/PropertyPanel.cpp
+  ui/PropertyPanelGeometryFields.h
+  ui/ThemeMode.h
+  ui/ThemeUtils.h
+  ui/ThemeUtils.cpp
+  ui/TutorialDialog.h
+  ui/TutorialDialog.cpp
+  ui/TutorialManualContent.h
 )
 
 # 全项目源文件清单（format / lint target 使用），单一来源避免双份维护。
