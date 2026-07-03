@@ -182,6 +182,7 @@ void CanvasView::clearCanvas() {
     cancelTransformSession();
     cancelAllStrategies();
 
+    m_selectionOverlay = nullptr;
     m_scene->clear();
     m_zCounter = 0.0;
     m_pasteCount = 0;
