@@ -8,6 +8,7 @@ set(SVG_EDITOR_TEST_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/core/ShapeDataTests.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/core/FileManagerTests.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/graphics/ShapeItemTests.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/ui/MainWindowTests.cpp
   ${CMAKE_SOURCE_DIR}/SVG_Editor/graphics/ShapeItem.cpp)
 
 set_property(GLOBAL APPEND PROPERTY SVG_EDITOR_SOURCE_FILES ${SVG_EDITOR_TEST_SOURCES})
@@ -30,9 +31,25 @@ add_executable(shape_item_tests
 target_include_directories(shape_item_tests PRIVATE ${CMAKE_SOURCE_DIR}/SVG_Editor)
 target_link_libraries(shape_item_tests PRIVATE svg_editor_core Qt6::Test Qt6::Widgets svg_editor_warnings Threads::Threads)
 
-add_custom_target(svg_editor_tests DEPENDS canvas_geometry_tests shape_data_tests file_manager_tests shape_item_tests)
+get_target_property(SVG_EDITOR_APP_TEST_SOURCES SVG_Editor SOURCES)
+list(FILTER SVG_EDITOR_APP_TEST_SOURCES EXCLUDE REGEX [[(^|.*/)app/main\.cpp$]])
+foreach(_src IN LISTS SVG_EDITOR_APP_TEST_SOURCES)
+  if(NOT IS_ABSOLUTE "${_src}")
+    list(REMOVE_ITEM SVG_EDITOR_APP_TEST_SOURCES "${_src}")
+    list(APPEND SVG_EDITOR_APP_TEST_SOURCES "${CMAKE_SOURCE_DIR}/SVG_Editor/${_src}")
+  endif()
+endforeach()
+
+add_executable(main_window_tests
+  ${CMAKE_CURRENT_SOURCE_DIR}/ui/MainWindowTests.cpp
+  ${SVG_EDITOR_APP_TEST_SOURCES})
+target_include_directories(main_window_tests PRIVATE ${CMAKE_SOURCE_DIR}/SVG_Editor)
+target_link_libraries(main_window_tests PRIVATE svg_editor_core Qt6::Test Qt6::Widgets svg_editor_warnings Threads::Threads)
+
+add_custom_target(svg_editor_tests DEPENDS canvas_geometry_tests shape_data_tests file_manager_tests shape_item_tests main_window_tests)
 
 add_test(NAME canvas_geometry_tests COMMAND canvas_geometry_tests)
 add_test(NAME shape_data_tests COMMAND shape_data_tests)
 add_test(NAME file_manager_tests COMMAND file_manager_tests)
 add_test(NAME shape_item_tests COMMAND shape_item_tests)
+add_test(NAME main_window_tests COMMAND main_window_tests)

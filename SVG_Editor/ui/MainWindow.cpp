@@ -245,6 +245,8 @@ void MainWindow::setupMenus() {
     populateMenu({m_closedShapeToolMenu,
                   {actionItem(findToolAction(CanvasView::Tool::Circle)), actionItem(findToolAction(CanvasView::Tool::Ellipse)),
                    actionItem(findToolAction(CanvasView::Tool::Rectangle)), actionItem(findToolAction(CanvasView::Tool::Polygon))}});
+    populateMenu({m_toolMenu,
+                  {submenuItem(m_selectionToolMenu), submenuItem(m_openShapeToolMenu), submenuItem(m_closedShapeToolMenu)}});
     populateMenu({m_viewMenu, {actionItem(m_togglePropertyDockAction), submenuItem(m_themeMenu)}});
     populateMenu({m_languageMenu, {actionItem(m_englishAction), actionItem(m_simplifiedChineseAction)}});
     populateMenu({m_tutorialMenu, {actionItem(m_showTutorialAction), separatorItem(), submenuItem(m_languageMenu)}});
