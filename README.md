@@ -1,8 +1,8 @@
 # SVG Editor
 
-轻量级桌面矢量图形编辑器。C++20 + Qt 6 Widgets，支持点、线、折线、多边形、圆、椭圆、矩形等基本图形的绘制、编辑、保存与导出。
+轻量级桌面矢量图形编辑器。C++20 + Qt 6.12 Widgets（Graphics View 框架），支持点、线、折线、多边形、圆、椭圆、矩形 7 种图形的绘制、编辑、保存与导出。
 
-本项目是 C++ 课程的实践项目：所有源码以分层架构组织，编译用 CMake Presets，测试用 Qt Test，持续集成使用 `clang-format` / `clang-tidy` / `ctest` 把关。
+本项目是 C++ 课程实践项目：所有源码按四层架构组织，编译用 CMake Presets，测试用 Qt Test + CTest，代码质量用 `clang-format` / `clang-tidy` 把关。
 
 ---
 
@@ -14,85 +14,110 @@
 - [源码结构](#源码结构)
 - [`.vgjson` 文件格式](#vgjson-文件格式)
 - [构建与运行](#构建与运行)
-  - [Windows (MSYS2 UCRT64)](#windows-msys2-ucrt64)
-  - [Linux](#linux)
   - [macOS](#macos)
+  - [Linux](#linux)
+  - [Windows (MSYS2 UCRT64)](#windows-msys2-ucrt64)
 - [开发工作流](#开发工作流)
-  - [运行单个测试](#运行单个测试)
-  - [格式化与静态检查](#格式化与静态检查)
-- [代码风格](#代码风格)
 - [国际化](#国际化)
-- [已知约束与设计取舍](#已知约束与设计取舍)
+- [代码风格](#代码风格)
+- [课程要求对照](#课程要求对照)
 
 ---
 
 ## 特性一览
 
-- **图形种类**：点、线段、折线、多边形（自动闭合）、圆、椭圆、矩形。
-- **交互方式**：
-  - 一次性拖拽：Line / Circle / Ellipse / Rectangle — 按下并拖动，松开落格。
-  - 多点绘制：Polyline / Polygon — 单击累加顶点，Enter / 双击结束，Esc 取消。
-  - 选择工具：单选 / 框选 / 拖动 / 缩放。
-- **属性面板**：选中后实时编辑描边色、线宽、线型、填充色、几何参数。
-- **复制 / 粘贴 / 删除**：内置 16 像素步进的多级粘贴。
-- **撤销友好结构**：`ShapeData` 携带 `id`（`QUuid`），便于后续接入撤销栈。
-- **持久化**：自定义 JSON 格式 `.vgjson`，跨平台可读。
-- **导出**：将当前画布渲染为 PNG。
-- **国际化**：运行时切换英文 / 简体中文，偏好通过 `QSettings` 持久化。
-- **内置教程**：双语操作手册对话框（`Tutorial → Operation Manual`）。
+- **7 种图形**：Point / Line / Polyline / Polygon / Circle / Ellipse / Rectangle
+- **两种创建方式**：
+  - 拖拽创建（DragCreationStrategy）— Line / Circle / Ellipse / Rectangle，按下拖拽落格
+  - 多点创建（PathCreationStrategy）— Polyline / Polygon，点击累加顶点，Enter / 双击结束，Esc 取消
+  - 即时创建 — Point 工具单次点击
+- **选择系统**：单击单选 + RubberBand 框选
+- **变换系统**：四角手柄缩放 + 整体平移，Shift 键锁定宽高比 / 角度吸附，支持 Esc 取消
+- **属性编辑**：PropertyPanel 实时编辑描边颜色 / 线宽 / 线型 / 填充颜色 / 几何参数，无需 Apply 按钮
+- **复制 / 粘贴 / 删除**：Ctrl+C 深拷贝，Ctrl+V 粘贴带 16px 偏移 + 新 UUID
+- **文件 I/O**：自定义 JSON 格式 `.vgjson`（version 2），支持打开 / 保存 / 另存为
+- **导出**：画布渲染为 PNG
+- **主题**：System / Light / Dark，Fusion 风格，System 模式跟随系统色觉设置
+- **国际化**：运行时切换 English / 简体中文，偏好通过 QSettings 持久化
+- **内置教程**：双语 HTML 操作手册对话框（Tutorial → Operation Manual）
 
 ---
 
 ## 快速开始
 
 ```bash
-# 1. 克隆 / 进入源码目录
 cd SVG_Editor
 
-# 2. 配置（以 macOS Debug 为例）
+# 配置（以 macOS Debug 为例）
 cmake --preset darwin-debug
 
-# 3. 编译
+# 编译
 cmake --build --preset build-darwin-debug
 
-# 4. 跑测试
-ctest --preset test-darwin-debug
+# 测试
+ctest --preset test-darwin-debug --output-on-failure
 
-# 5. 启动应用
-./out/build/darwin-debug/SVG_Editor.app/Contents/MacOS/SVG_Editor
+# 启动
+open ./out/build/darwin-debug/SVG_Editor.app
 ```
 
-Windows / Linux 的具体命令见 [构建与运行](#构建与运行)。
+其他平台的具体命令见 [构建与运行](#构建与运行)。
 
 ---
 
 ## 架构总览
 
-项目按"依赖方向"分四层；下层不引用上层。`core` 静态库供所有上层共用，`ui` 可执行文件把各模块串成完整应用。
+项目按依赖方向严格分四层，下层不引用上层：
 
 ```
-entry      main.cpp                       — QApplication 入口
+entry       app/main.cpp                          — QApplication 入口
   │
   ▼
-ui         MainWindow                     — 菜单 / 工具栏 / 信号桥接
-  │         CanvasView (QGraphicsView)    — 工具状态机 + 鼠标事件
-  │         PropertyPanel                 — 选中图形的属性编辑
-  │         TutorialDialog                — 内嵌双语 HTML 手册
-  │         ShapeItem (QGraphicsObject)   — 单个图形的绘制 + 命中测试
-  │
-  ▼
-core       ShapeData                      — 数据模型 + JSON 序列化
-  │         FileManager                   — 文档级 JSON I/O
-  │         AppLanguage                   — i18n 枚举
-  │         ShapeFactory                  — 构造 / 克隆辅助
+ui          MainWindow                            — 菜单 / 工具栏 / 信号桥接
+            MainWindowActions                     — 声明式菜单/工具栏组装 DSL
+            PropertyPanel + GeometryFields        — 图形属性实时编辑器
+            TutorialDialog + ManualContent        — 双语 HTML 手册
+            ThemeMode / ThemeUtils                — 主题系统
+
+canvas      CanvasView (QGraphicsView)            — 工具状态机 + 鼠标事件分发
+            DragCreationStrategy                  — 拖拽创建策略
+            PathCreationStrategy                  — 多点创建策略
+            MultiShapeSession                     — 多选快照 / 变换撤销
+            SelectionTransformOverlayItem         — 选择框覆盖层（手柄+虚线框）
+
+graphics    ShapeItem (QGraphicsObject)           — 单图形绘制 + 命中测试
+            ShapeFactory                          — 构造 / 克隆辅助
+
+core        ShapeData                             — 数据模型 + JSON 序列化
+            FileManager                           — 文档级 JSON I/O
+            CanvasGeometry                        — 几何计算（帧变换、缩放）
+            SelectionFrame                        — 有向包围盒 OBB
+            AppLanguage / I18n                    — 国际化枚举 + 翻译表
+            CanvasViewConstants                   — 全局常量
 ```
 
-### 关键设计决策
+### 设计模式
 
-- **数据 / 视图分离**：`ShapeData`（`core`）只承担纯数据与序列化；`ShapeItem`（`ui`）只承担绘制与命中测试。`CanvasView` 不直接读 `ShapeItem` 内部状态，而是通过 `ShapeItem::shapeData()` 拉回数据再写回。
-- **拖拽工作流与路径工作流共享 `m_previewItem`**：两个状态机不能并存；切换工具时一律 `cancelDrawing()`。
-- **JSON 字段名是稳定契约**：`ShapeData.h` / `FileManager.h` 注释中已注明此点，修改字段名需同步更新两个文件。
-- **z 值 = `ShapeData::zValue` + `ShapeItem` 自身微小偏移**：同层图形的命中测试靠这层偏移区分。
+| 模式 | 应用位置 | 说明 |
+|------|---------|------|
+| 策略模式 | CreationStrategy 体系 | 统一接口，两种创建策略，依赖注入解耦 |
+| 工厂模式 | ShapeFactory | 集中创建 + 强制归一化 |
+| 快照模式 | MultiShapeSession | 变换前拍摄完整数据快照，Esc 恢复 |
+| 观察者模式 | Qt 信号槽 | selectionStateChanged / shapeEdited 等 4 条信号链 |
+| 声明式 DSL | MainWindowActions | ActionDescriptor / MenuDescriptor 数据驱动 UI 组装 |
+| 防重入守卫 | PropertyPanel::m_updatingWidgets | 打破 setShapeData → emit → setShapeData 循环 |
+
+### 关键数据流
+
+```
+PropertyPanel 控件值改变
+  → emit shapeEdited(data)
+    → CanvasView::updateSelectedShape(data)
+      → item->setShapeData(data) → 重绘
+      → emit selectionStateChanged(item, 1)
+    → PropertyPanel::setShapeData(data)
+      → [m_updatingWidgets=true] 填充控件，不重复发射
+```
 
 ---
 
@@ -100,97 +125,122 @@ core       ShapeData                      — 数据模型 + JSON 序列化
 
 ```
 SVG_Editor/
-├── CMakeLists.txt              # 根 CMake：项目设置、format/lint/typecheck 目标
-├── CMakePresets.json           # 三平台 × 两 build type 预设
-├── .clang-format               # LLVM 基础风格（4 空格 / 120 列）
-├── .clang-tidy                 # bugprone / modernize / performance / readability
-├── .editorconfig               # 强制 UTF-8 + LF + 4 空格
-├── README.md                   # 本文件
-├── SVG_Editor/                 # 全部源码（10 模块，20 个 .h/.cpp）
-│   ├── main.cpp
-│   ├── AppLanguage.h           # i18n 枚举
-│   ├── ShapeData.{h,cpp}       # 数据模型 + 序列化
-│   ├── FileManager.{h,cpp}     # 文档级 JSON I/O
-│   ├── ShapeFactory.{h,cpp}    # ShapeItem 构造 / 克隆
-│   ├── ShapeItem.{h,cpp}       # QGraphicsObject 渲染层
-│   ├── CanvasView.{h,cpp}      # 主画布 + 工具状态机
-│   ├── PropertyPanel.{h,cpp}   # 选中图形的属性编辑
-│   ├── TutorialDialog.{h,cpp}  # 内嵌双语 HTML 手册
-│   └── MainWindow.{h,cpp}      # 主窗口 + 菜单 / 工具栏
+├── CMakeLists.txt                     # 根 CMake：C++20、Qt6 AUTOMOC、format/lint/typecheck 目标
+├── CMakePresets.json                  # 三平台 × 双模式构建/测试预设
+├── .clang-format                      # LLVM 风格（4 空格、120 列）
+├── .clang-tidy                        # bugprone/modernize/performance/readability
+├── .editorconfig                      # UTF-8 / LF / 4 空格
+├── README.md                          # 本文件
+├── description.md                     # 详细项目分析（供答辩 PPT 生成用）
+├── SVG_Editor/
+│   ├── CMakeLists.txt                 # svg_editor_core（静态库）+ SVG_Editor（可执行文件）
+│   ├── app/
+│   │   └── main.cpp                   # [entry] 应用入口
+│   ├── core/                          # [core] 零 Widgets 依赖，可被任意层引用
+│   │   ├── ShapeData.h/.cpp           #   图形数据模型 + JSON 序列化/归一化
+│   │   ├── AppLanguage.h/.cpp         #   语言枚举 + QSettings 持久化
+│   │   ├── I18n.h/.cpp                #   统一翻译接口 + 图形/线型翻译表
+│   │   ├── CanvasGeometry.h/.cpp      #   几何计算：帧缩放、变换矩阵、角度吸附
+│   │   ├── CanvasViewConstants.h      #   全局魔术数字常量
+│   │   ├── SelectionFrame.h/.cpp      #   有向包围盒 OBB（支持旋转变换）
+│   │   └── FileManager.h/.cpp         #   .vgjson 文件读写 + 安全校验
+│   ├── canvas/                        # [canvas] 画布交互与控制
+│   │   ├── CanvasView.h               #   QGraphicsView 子类，8 种工具状态机
+│   │   ├── CanvasViewCore.cpp         #   生命周期、addShape、文档 I/O、导出
+│   │   ├── CanvasViewInput.cpp        #   鼠标/键盘事件分发（4 种工具 × 5 种事件）
+│   │   ├── CanvasViewSelection.cpp    #   选择管理、覆盖层更新、变换/平移会话
+│   │   ├── CreationStrategy.h         #   ICreationStrategy 抽象接口
+│   │   ├── DragCreationStrategy.h/.cpp    # 拖拽创建策略（Line/Rect/Circle/Ellipse）
+│   │   ├── PathCreationStrategy.h/.cpp    # 路径创建策略（Polyline/Polygon）
+│   │   ├── MultiShapeSession.h/.cpp       # 多选快照 + cancel/restore
+│   │   └── SelectionTransformOverlayItem.h/.cpp  # 选择框覆盖层（4 手柄 + 虚线框）
+│   ├── graphics/                      # [graphics] QGraphicsItem 渲染
+│   │   ├── ShapeItem.h/.cpp           #   QGraphicsObject：路径构建 + 绘制 + 碰撞检测
+│   │   └── ShapeFactory.h/.cpp        #   工厂：createItem() + cloneWithOffset()
+│   └── ui/                            # [ui] Qt Widgets 界面
+│       ├── MainWindow.h/.cpp          #   主窗口：菜单/工具栏/信号桥接/文件操作
+│       ├── MainWindowActions.h/.cpp   #   声明式 ActionDescriptor / populateMenu / populateToolbar
+│       ├── PropertyPanel.h/.cpp       #   属性面板：几何/描边/填充实时编辑
+│       ├── PropertyPanelGeometryFields.h  # 几何字段按类型映射表
+│       ├── TutorialDialog.h/.cpp      #   模态教程对话框（QTextBrowser）
+│       ├── TutorialManualContent.h    #   静态双语 HTML 教程内容
+│       ├── ThemeMode.h                #   System/Light/Dark 枚举 + QSettings 序列化
+│       └── ThemeUtils.h/.cpp          #   buildThemePalette + applyApplicationTheme
 └── tests/
     ├── CMakeLists.txt
-    ├── ShapeDataTests.cpp      # ShapeData / 序列化 / 归一化测试
-    └── FileManagerTests.cpp    # FileManager 往返 / 缺省字段 / 错误文件测试
+    ├── core/
+    │   ├── ShapeDataTests.cpp         #   14 项：JSON 往返、归一化、缺字段、选择框变换
+    │   ├── FileManagerTests.cpp       #   5 项：读写往返、版本/变换/ID 校验
+    │   └── CanvasGeometryTests.cpp    #   10 项：帧缩放、正交化、等比缩放、钳制防翻转
+    ├── graphics/
+    │   └── ShapeItemTests.cpp         #   9 项：各类型路径构建、交互区域、预览画笔
+    └── ui/
+        └── MainWindowTests.cpp        #   1 项：工具菜单结构验证（3 子菜单 × 1/3/4 动作）
 ```
 
 ---
 
 ## `.vgjson` 文件格式
 
-本项目**不**使用标准 SVG，而是自定义 JSON 格式，扩展名为 `.vgjson`（也接受 `.json`）。
+本项目使用自定义 JSON 格式，扩展名 `.vgjson`（也接受 `.json`），当前版本为 **2**。
 
 ### 根对象
 
-| 字段      | 类型      | 是否必填 | 说明                                       |
-| --------- | --------- | -------- | ------------------------------------------ |
-| `version` | integer   | 必填     | 当前固定为 `1`                             |
-| `canvas`  | object    | 必填     | 画布尺寸；缺省字段回退到 1200×800          |
-| `shapes`  | array     | 必填     | 全部图形（按 z 升序）                       |
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `version` | integer | 必填 | 当前固定为 `2` |
+| `canvas` | object | 必填 | `{width, height}`，默认 1200×800 |
+| `shapes` | array | 必填 | 图形列表，按 zValue 升序排列 |
 
-### `canvas` 对象
+### 单个图形 `shapes[]`
 
-| 字段    | 类型    | 说明                       |
-| ------- | ------- | -------------------------- |
-| `width` | number  | 画布逻辑宽度（场景坐标系） |
-| `height`| number  | 画布逻辑高度               |
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | string | UUID |
+| `type` | string | `point` / `line` / `polyline` / `polygon` / `circle` / `ellipse` / `rectangle` |
+| `geometry` | object | 按类型不同（见下表） |
+| `strokeEnabled` | boolean | 是否描边 |
+| `strokeColor` | string | `#AARRGGBB` |
+| `strokeWidth` | number | ≥ 0.5 |
+| `strokeStyle` | string | `solid` / `dash` / `dot` / `dashdot` |
+| `fillColor` | string | `#AARRGGBB` |
+| `fillEnabled` | boolean | 仅封闭图形有效 |
+| `transform` | object | `{m11, m12, m21, m22, dx, dy}`，仅支持平移+缩放 |
+| `zValue` | number | 绘制顺序 |
 
-### `shapes[]` 单个图形
+### `geometry` 字段按类型
 
-| 字段          | 类型     | 说明                                                       |
-| ------------- | -------- | ---------------------------------------------------------- |
-| `id`          | string   | UUID；粘贴 / 撤销栈会用到                                  |
-| `type`        | string   | `point` / `line` / `polyline` / `polygon` / `circle` / `ellipse` / `rectangle` |
-| `points`      | array    | `{x, y}` 数组；按 `type` 决定长度（详见下表）              |
-| `rect`        | object   | `{x, y, width, height}`；按 `type` 决定是否使用             |
-| `strokeColor` | string   | `#AARRGGBB`                                               |
-| `strokeWidth` | number   | ≥ 0.5                                                     |
-| `strokeStyle` | string   | `solid` / `dash` / `dot` / `dashdot`                      |
-| `fillColor`   | string   | `#AARRGGBB`                                               |
-| `fillEnabled` | boolean  | 仅在 `circle` / `ellipse` / `rectangle` / `polygon` 有效  |
-| `zValue`      | number   | 绘制顺序                                                   |
-
-### `points` 与 `rect` 字段的语义
-
-| `type`      | `points` 含义         | `rect` 含义             |
-| ----------- | --------------------- | ----------------------- |
-| `point`     | 1 个点（坐标）        | 不使用                  |
-| `line`      | 2 个点（起、终）      | 不使用                  |
-| `polyline`  | ≥ 2 个顶点            | 不使用                  |
-| `polygon`   | ≥ 2 个顶点（自动闭）  | 不使用                  |
-| `circle`    | 不使用                | 正方形外接框            |
-| `ellipse`   | 不使用                | 外接矩形                |
-| `rectangle` | 不使用                | 矩形（可任意方向）      |
+| type | geometry | 说明 |
+|------|----------|------|
+| `point` | `{x, y}` | 单点坐标 |
+| `line` | `{x1, y1, x2, y2}` | 线段起终点 |
+| `polyline` | `{points: [{x,y},...]}` | ≥2 个顶点 |
+| `polygon` | `{points: [{x,y},...]}` | ≥2 个顶点，自动闭合 |
+| `circle` | `{cx, cy, r}` | 圆心 + 半径 |
+| `ellipse` | `{cx, cy, rx, ry}` | 圆心 + 半轴 |
+| `rectangle` | `{x, y, width, height}` | 左上角 + 宽高 |
 
 ### 示例
 
 ```json
 {
-  "version": 1,
-  "canvas": { "width": 1200, "height": 800 },
-  "shapes": [
-    {
-      "id": "f1c8a3e0-1234-4abc-9def-000000000001",
-      "type": "rectangle",
-      "points": [],
-      "rect": { "x": 100, "y": 100, "width": 200, "height": 120 },
-      "strokeColor": "#ff000000",
-      "strokeWidth": 2.0,
-      "strokeStyle": "solid",
-      "fillColor": "#ff80c8ff",
-      "fillEnabled": true,
-      "zValue": 0
-    }
-  ]
+    "version": 2,
+    "canvas": {"width": 1200, "height": 800},
+    "shapes": [
+        {
+            "id": "f1c8a3e0-1234-4abc-9def-000000000001",
+            "type": "rectangle",
+            "geometry": {"x": 100, "y": 100, "width": 200, "height": 120},
+            "strokeEnabled": true,
+            "strokeColor": "#ff000000",
+            "strokeWidth": 2.0,
+            "strokeStyle": "solid",
+            "fillColor": "#80c8ff",
+            "fillEnabled": true,
+            "transform": {"m11": 1.0, "m12": 0.0, "m21": 0.0, "m22": 1.0, "dx": 0.0, "dy": 0.0},
+            "zValue": 0.0
+        }
+    ]
 }
 ```
 
@@ -200,195 +250,125 @@ SVG_Editor/
 
 ### 通用前置条件
 
-- **CMake 3.24+**
-- **Qt 6**（`Core` / `Gui` / `Widgets`，测试时还要 `Test`）
-- **Ninja**
-- **C++20 编译器**
-  - Windows: MSVC 或 **MSYS2 UCRT64 内的 g++**（推荐）
-  - Linux: GCC 或 Clang
-  - macOS: Apple Clang（Xcode Command Line Tools）
+- CMake 3.16+
+- Qt 6（Core / Gui / Widgets，测试额外需要 Test）
+- Ninja
+- C++20 编译器
 
-### Windows (MSYS2 UCRT64)
-
-#### 安装（一次性）
+### macOS
 
 ```bash
-# 在 MSYS2 UCRT64 终端中
-pacman -Syu
-pacman -S --noconfirm mingw-w64-ucrt-x86_64-gcc \
-                     mingw-w64-ucrt-x86_64-ninja \
-                     mingw-w64-ucrt-x86_64-cmake \
-                     mingw-w64-ucrt-x86_64-qt6-base \
-                     mingw-w64-ucrt-x86_64-qt6-declarative
-```
+# 安装依赖
+brew install qt cmake ninja
 
-#### 构建
+# 构建
+cmake --preset darwin-debug
+cmake --build --preset build-darwin-debug
+ctest --preset test-darwin-debug --output-on-failure
 
-```powershell
-# PowerShell（推荐使用 Windows Terminal 的 MSYS2 UCRT64 profile）
-cmake --preset windows-ucrt64-debug
-cmake --build --preset build-ucrt64-debug
-ctest --preset test-ucrt64-debug
-```
-
-> **PATH 提示**：preset 已把 `C:/msys64/ucrt64/bin` 注入到 `PATH`，无需额外设置即可找到 Qt DLL。如在普通 PowerShell 中手动构建，先执行
-> ```powershell
-> $env:Path = "C:\msys64\ucrt64\bin;C:\msys64\usr\bin;" + $env:Path
-> ```
-
-#### 启动应用
-
-```powershell
-.\out\build\windows-ucrt64-debug\SVG_Editor.exe
+# 启动
+open ./out/build/darwin-debug/SVG_Editor.app
 ```
 
 ### Linux
 
 ```bash
-# 依赖（Debian/Ubuntu 为例）
-sudo apt install build-essential cmake ninja-build qt6-base-dev qt6-declarative-dev
+# Debian/Ubuntu 依赖
+sudo apt install build-essential cmake ninja-build qt6-base-dev
 
 # 构建
 cmake --preset linux-debug
 cmake --build --preset build-linux-debug
-ctest --preset test-linux-debug
+ctest --preset test-linux-debug --output-on-failure
 
 # 启动
 ./out/build/linux-debug/SVG_Editor
 ```
 
-### macOS
-
-#### 安装（一次性）
+### Windows (MSYS2 UCRT64)
 
 ```bash
-# 1) 安装 Xcode Command Line Tools（如未安装）
-xcode-select --install
+# 在 MSYS2 UCRT64 终端中安装
+pacman -Syu
+pacman -S --noconfirm mingw-w64-ucrt-x86_64-gcc \
+                     mingw-w64-ucrt-x86_64-ninja \
+                     mingw-w64-ucrt-x86_64-cmake \
+                     mingw-w64-ucrt-x86_64-qt6-base
 
-# 2) 安装 Homebrew Qt
-brew install qt cmake ninja
+# 构建
+cmake --preset windows-ucrt64-debug
+cmake --build --preset build-ucrt64-debug
+ctest --preset test-ucrt64-debug --output-on-failure
 
-# 备用：使用 Qt 官方安装器
-# 下载 https://www.qt.io/download-qt-installer 并把 Qt 6 装到 ~/Qt/6.x.x/macos
-# 之后把下面加到 ~/.zshrc：
-#   export CMAKE_PREFIX_PATH="$HOME/Qt/6.x.x/macos:$CMAKE_PREFIX_PATH"
+# 启动
+.\out\build\windows-ucrt64-debug\SVG_Editor.exe
 ```
-
-#### 构建
-
-```bash
-# 默认从 Homebrew 查找 Qt（/opt/homebrew/opt/qt, /usr/local/opt/qt）
-cmake --preset darwin-debug
-cmake --build --preset build-darwin-debug
-ctest --preset test-darwin-debug
-
-# Release 变体
-cmake --preset darwin-release
-cmake --build --preset build-darwin-release
-```
-
-如果你的 Qt 装在非标准路径，可在调用 preset 前覆盖 `CMAKE_PREFIX_PATH`：
-
-```bash
-export CMAKE_PREFIX_PATH="$HOME/Qt/6.7.0/macos:$CMAKE_PREFIX_PATH"
-cmake --preset darwin-debug
-cmake --build --preset build-darwin-debug
-```
-
-#### 启动应用
-
-```bash
-open ./out/build/darwin-debug/SVG_Editor.app
-# 或
-./out/build/darwin-debug/SVG_Editor.app/Contents/MacOS/SVG_Editor
-```
-
-> **代码签名提示**：未签名的 `.app` 在 Apple Silicon 上首次启动可能被 Gatekeeper 拦截。
-> 命令行启动（第二条命令）可以绕过该限制。
 
 ---
 
 ## 开发工作流
 
-### 运行单个测试
-
 ```bash
-# Windows
-ctest --preset test-ucrt64-debug -R shape_data_tests --output-on-failure
-ctest --preset test-ucrt64-debug -R file_manager_tests --output-on-failure
-
-# Linux
-ctest --preset test-linux-debug -R shape_data_tests --output-on-failure
-
-# macOS
-ctest --preset test-darwin-debug -R shape_data_tests --output-on-failure
-```
-
-也可直接跑测试可执行文件（更快，适合调试）：
-
-```bash
-# macOS 示例
-./out/build/darwin-debug/shape_data_tests
-./out/build/darwin-debug/file_manager_tests
-```
-
-### 格式化与静态检查
-
-```bash
-# 全部格式化（覆盖 SVG_Editor/ + tests/ 全部源文件）
+# 格式化源码
 cmake --build --preset build-darwin-debug --target format
 
-# 仅校验不修改（CI 用的门禁）
+# CI 格式检查（不修改文件）
 cmake --build --preset build-darwin-debug --target format-check
 
 # clang-tidy 静态分析
 cmake --build --preset build-darwin-debug --target lint
 
-# 编译式类型检查（= 完整构建）
+# 全量编译类型检查
 cmake --build --preset build-darwin-debug --target typecheck
+
+# 运行单个测试
+ctest --preset test-darwin-debug -R shape_data_tests --output-on-failure
+
+# 直接运行测试二进制（更快）
+./out/build/darwin-debug/shape_data_tests
+./out/build/darwin-debug/file_manager_tests
+./out/build/darwin-debug/canvas_geometry_tests
+./out/build/darwin-debug/shape_item_tests
+./out/build/darwin-debug/main_window_tests
 ```
-
-> `format` / `format-check` / `lint` 需要 `clang-format` / `clang-tidy` 在 `PATH` 中。
-> macOS 自带 `clang-format`（来自 Xcode CLT），`clang-tidy` 用 `brew install llvm` 安装后位于 `/opt/homebrew/opt/llvm/bin`。
-
-### 清理
-
-```bash
-rm -rf out/build/darwin-debug
-```
-
----
-
-## 代码风格
-
-- **基础风格**：LLVM 风格（`.clang-format`）。
-- **缩进**：4 空格（`.editorconfig`）。
-- **列宽**：120。
-- **指针对齐**：左对齐（`int* p`）。
-- **头文件顺序**：`#pragma once` 之后按 `core` → `graphics` → `ui` 顺序 include；不强制 IWYU。
-- **Doxygen 注释**：所有公开类型、方法、成员变量均用 `///` 块注释；中文为主、英文保留技术术语。
-- **可疑代码**：用 `// FIXME:` 标记已确认有问题但不立即修复的位置（详见 `ShapeData.cpp` / `FileManager.cpp`）；不要把这些标记用作 TODO 列表。
-- **行内注释**：仅在以下场景使用——魔法数字、Qt 平台差异、绕过的编译器行为。
 
 ---
 
 ## 国际化
 
-- 语言标识：`enum class AppLanguage : std::uint8_t { English, SimplifiedChinese }`（见 [SVG_Editor/AppLanguage.h](SVG_Editor/AppLanguage.h)）。
-- 翻译方式：每个 UI 模块自行实现 `textForLanguage(language, "en", "zh")`，**不**依赖 Qt Linguist / `.ts` 文件。
-- 持久化：用户上次选择写入 `QSettings`，key 为 `ui/language`，值 `"en"` 或 `"zh-CN"`（非 `"en"` 一律回退为简体中文）。
-- 切换路径：`Tutorial → Language → English / 简体中文`。
+- 语言枚举：`AppLanguage { English, SimplifiedChinese }`（`core/AppLanguage.h`）
+- 翻译方案：自定义 `i18n::tr(language, key, en, zh)` 接口，**不依赖** Qt Linguist
+- 翻译表：`core/I18n.h` 中集中维护图形类型名称 + 线型名称
+- 持久化：`QSettings` 键 `ui/language`，值 `"en"` / `"zh-CN"`
+- 切换路径：`Tutorial → Language → English / 简体中文`
 
 ---
 
-## 已知约束与设计取舍
+## 代码风格
 
-- **JSON 字段顺序敏感**：`shapeDataToJson` 的字段顺序与 `QJsonObject` 构造顺序一致，便于人读；不要为了"对齐"而调整顺序（diff 会很乱）。
-- **`ShapeType` 7 个枚举值**：`shapeTypeToString` 用 `default:` 兜底返回 `"unknown"`；新增枚举值时**必须**同步此函数（GCC `-Wswitch` 会告警）。
-- **拖拽工作流与路径工作流互斥**：共享 `m_previewItem`，切换工具时必须 `cancelDrawing()`。
-- **`m_updatingWidgets` 防重入**：`PropertyPanel` 在响应用户输入时使用该标志阻止自身信号重入。
-- **PNG 导出走 `QGraphicsView::grab()`**：画布尺寸以场景坐标系为准，与视图缩放无关。
-- **`QSettings` 路径**：Windows 下写到注册表 `HKEY_CURRENT_USER\Software\CourseProject\SVG Editor`，macOS 下写到 `~/Library/Preferences/com.CourseProject.SVG-Editor.plist`，Linux 下写到 `~/.config/CourseProject/SVG Editor.conf`。
+- 基础风格：LLVM（`.clang-format`），4 空格缩进，120 列宽
+- Doxygen 注释：每个文件头部 `@brief` / `@details` / `@layer`，公开方法 `///` 注释
+- 头文件保护：`#pragma once`
+- 常量管理：全部集中在 `CanvasViewConstants.h`
+- 内存管理：Qt 父子对象树自动管理
+
+---
+
+## 课程要求对照
+
+| # | 要求 | 实现情况 |
+|---|------|---------|
+| 1 | 绘制点/直线/折线/圆/椭圆/矩形/多边形 | ✅ 7 种图形，可视化鼠标交互（拖拽+多点两种策略模式） |
+| 2 | 选择、编辑、删除 | ✅ 单选+框选、PropertyPanel 实时编辑、Delete 键删除 |
+| 3 | 图形文件保存 | ✅ 自定义 .vgjson 格式（JSON），version 2 |
+| 4 | 图形文件打开 | ✅ 含版本校验、变换合法性、重复 ID 检测 |
+| 5 | 添加图形 | ✅ 工具栏/菜单 8 种工具即时切换 |
+| 6 | 属性信息（颜色/线宽/线型）+ 修改 | ✅ ShapeStyle + PropertyPanel 全字段可编辑 |
+| 7 | 封闭图形颜色填充 | ✅ Circle/Ellipse/Rectangle/Polygon 支持 fillEnabled + fillColor |
+| 8 | 移动 | ✅ Select 工具拖拽平移，快照式撤销 |
+| 8 | 缩放 | ✅ 四角手柄拖拽，Shift 等比缩放 |
+| 8 | 复制 | ✅ Ctrl+C 深拷贝至剪贴板 |
+| 8 | 粘贴（拷贝） | ✅ Ctrl+V 带 16px 偏移 + 新 UUID |
 
 ---
 
