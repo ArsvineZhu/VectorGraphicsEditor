@@ -9,6 +9,6 @@ Checks: >
   performance-*,
   readability-duplicate-include
 WarningsAsErrors: ''
-HeaderFilterRegex: '.*(SVG_Editor|tests)/.*'
+HeaderFilterRegex: '.*(VectorGraphicsEditor|tests)/.*'
 ExcludeHeaderFilterRegex: '.*/out/build/.*/.*_autogen/.*'
 FormatStyle: file

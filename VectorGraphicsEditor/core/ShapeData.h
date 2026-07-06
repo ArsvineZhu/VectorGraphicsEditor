@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------
 // @brief   图形数据模型（核心层，无 Qt Widgets 依赖）
 // @details 定义项目中所有图形的纯数据结构、几何归一化规则、JSON 序列化
-//          函数以及本地化显示名。位于 `svg_editor_core` 静态库，被 UI 层、
+//          函数以及本地化显示名。位于 `vector_graphics_editor_core` 静态库，被 UI 层、
 //          图形层、I/O 层共同引用。
 // @layer   core
 // @deps    Qt6::Core（仅使用 QColor / QPointF / QRectF / QString / QJson）

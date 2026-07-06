@@ -1,82 +1,45 @@
 ---
-layout: default
+layout: two-cols-header
 transition: slide-left
 ---
 
-# 核心数据模型 · ShapeData
+# 功能总览
 
-<div style="height:2px;width:32px;background:#2d7ff9;margin:0.5rem 0 1.5rem 0;"></div>
+::left::
 
-<div class="dim" style="font-size:0.85rem;margin-bottom:1rem;">core/ShapeData.h · 153 行 · struct 而非 class</div>
+<div class="rounded-xl border border-slate-200 bg-slate-50 p-5 text-sm h-full">
+  <div class="font-semibold text-slate-700 mb-3">创建链路</div>
+  <v-clicks>
 
-<div class="grid" style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;">
+  - `Point`：单击即生成。
+  - `Line / Circle / Ellipse / Rectangle`：按下-拖拽-释放完成。
+  - `Polyline / Polygon`：逐点累加，`Enter` 或双击结束。
+  - 绘制中存在 preview item，用户先看到结果再确认落盘。
 
-<div>
-
-```cpp
-struct ShapeData {
-    QString id;
-    ShapeType type;
-    QVector<QPointF> points;
-    QRectF rect;
-    ShapeStyle style;
-    QTransform transform;
-    qreal zValue = 0.0;
-};
-
-struct ShapeStyle {
-    bool strokeEnabled = true;
-    QColor strokeColor = Qt::black;
-    qreal strokeWidth = 2.0;
-    QColor fillColor = "#80c8ff";
-    bool fillEnabled = false;
-};
-```
-
+  </v-clicks>
 </div>
 
-<div>
+::right::
 
-<div style="border:1px solid #e8e8e8;border-radius:6px;padding:0.8rem 1rem;">
-
-<div style="font-weight:600;font-size:0.9rem;margin-bottom:0.5rem;">ShapeType · 7 种图形</div>
-
-| 类型 | 字段 | 说明 |
-|------|------|------|
-| Point | points[0] | 直径 6px |
-| Line | points[0..1] | 线段 |
-| Polyline | points[0..n] | ≥2 顶点 |
-| Polygon | points[0..n] | 自动闭合 |
-| Circle | rect | 强制正方形框 |
-| Ellipse | rect | 外接矩形 |
-| Rectangle | rect | 任意方向 |
-
+<div class="space-y-4 text-sm">
+  <div v-click class="rounded-xl border border-slate-200 p-5">
+    <div class="font-semibold text-slate-700 mb-2">编辑能力</div>
+    <div class="text-slate-500">单选、橡皮筋框选、四角手柄缩放、整体平移、实时属性编辑、复制粘贴删除。</div>
+  </div>
+  <div v-click class="rounded-xl border border-slate-200 p-5">
+    <div class="font-semibold text-slate-700 mb-2">文档能力</div>
+    <div class="text-slate-500">`.vgjson` 打开 / 保存 / 另存为，文档版本固定为 2，画布可导出 PNG。</div>
+  </div>
+  <div v-click class="rounded-xl border border-slate-200 p-5">
+    <div class="font-semibold text-slate-700 mb-2">产品细节</div>
+    <div class="text-slate-500">运行时切换语言和主题，偏好通过 `QSettings` 持久化，内置双语操作手册。</div>
+  </div>
 </div>
 
-<v-click>
-
-<div style="border:1px solid #e8e8e8;border-radius:6px;padding:0.8rem 1rem;margin-top:0.75rem;">
-
-<div style="font-weight:600;font-size:0.9rem;margin-bottom:0.3rem;">归一化保证</div>
-
-<div style="font-size:0.85rem;color:#555;">
-
-`normalizedShapeData()` 在构造时执行:
-
-- 负宽高 rect → 规范化为左上角 + 正值
-- Circle → 宽高取 max，强制正方形
-- 不支持填充的类型 → fillEnabled = false
-
-</div>
-
-</div>
-
-</v-click>
-
-</div>
-
+<div v-click class="mt-5 rounded-xl border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-700">
+  现场 demo 建议顺序：创建矩形 → 改描边 / 填充 → 框选缩放 → 复制粘贴 → 保存 / 重新打开。
 </div>
 
 <!--
-ShapeData是整个系统的数据模型基座，采用struct而非class，因为它是纯数据容器，所有字段需要被外部读写，没有需要隐藏的内部实现细节。7种图形类型分为两类：基于点的和基于矩形框的。这种二分法决定了交互创建方式的不同——前者需要多次点击，后者一次拖拽完成。归一化函数在构造和加载时都会调用，保证内部始终是规范的几何数据。
+这一页从用户视角讲功能，不急着进代码。答辩时可以把“创建链路”和“编辑链路”对应到后面策略模式、事件分发和几何变换三页，让老师先知道系统究竟能做什么。
 -->

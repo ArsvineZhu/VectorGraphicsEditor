@@ -56,7 +56,7 @@ cmake --build --preset build-darwin-debug --target lint
 
 - Homebrew: `brew install qt cmake ninja` → presets find Qt automatically.
 - Qt installer: install to `~/Qt/6.x.x/macos`, then `export CMAKE_PREFIX_PATH="$HOME/Qt/6.x.x/macos:$CMAKE_PREFIX_PATH"` before `cmake --preset`.
-- Run unsigned `.app` from terminal to bypass Gatekeeper: `./out/build/darwin-debug/SVG_Editor.app/Contents/MacOS/SVG_Editor`.
+- Run unsigned `.app` from terminal to bypass Gatekeeper: `./out/build/darwin-debug/VectorGraphicsEditor.app/Contents/MacOS/VectorGraphicsEditor`.
 
 ---
 
@@ -84,7 +84,7 @@ ui         ui/MainWindow                      — menus, toolbar, QActionGroup, 
   ↳        ui/ThemeMode / ui/ThemeUtils       — light / dark / system theme (QPalette + Fusion style)
 ```
 
-**`core` is a static library** (`svg_editor_core`) linked by both the app and the tests. `ShapeData` is the only struct that crosses every layer boundary; it must remain free of `QGraphicsItem`/Widgets dependencies.
+**`core` is a static library** (`vector_graphics_editor_core`) linked by both the app and the tests. `ShapeData` is the only struct that crosses every layer boundary; it must remain free of `QGraphicsItem`/Widgets dependencies.
 
 ### Why this matters when editing
 
@@ -115,13 +115,13 @@ Key point: `points` and `rect` have **type-dependent semantics** — for `point`
 ### Tooling config files
 
 - `.clang-format` — LLVM base, 4-space indent, 120-col limit, `SortIncludes: Never` (project enforces include order manually).
-- `.clang-tidy` — `bugprone-*`, `clang-analyzer-*`, `modernize-use-nullptr/override`, `performance-*`, `readability-duplicate-include`. Header filter restricts it to `SVG_Editor/` and `tests/`.
+- `.clang-tidy` — `bugprone-*`, `clang-analyzer-*`, `modernize-use-nullptr/override`, `performance-*`, `readability-duplicate-include`. Header filter restricts it to `VectorGraphicsEditor/` and `tests/`.
 - `.editorconfig` — UTF-8, LF, final newline, trim trailing whitespace.
 - `CMakePresets.json` — v6 schema. `base` is portable (no compiler/PATH); Windows-specific bits live in `windows-ucrt64` (hidden); `base-unix` (hidden) is the parent of `linux-*` and `darwin-*`. To add a new platform, inherit from `base-unix` (or create a new hidden platform-specific intermediate if you need hardcoded paths).
 
 ### Tests
 
-Test sources now mirror production modules under `tests/core/` and `tests/graphics/`. Binaries remain linked against `svg_editor_core` + `Qt6::Test`:
+Test sources now mirror production modules under `tests/core/` and `tests/graphics/`. Binaries remain linked against `vector_graphics_editor_core` + `Qt6::Test`:
 
 - `shape_data_tests` — `tests/core/ShapeDataTests.cpp`
 - `file_manager_tests` — `tests/core/FileManagerTests.cpp`

@@ -340,7 +340,8 @@ void MainWindow::retranslateUi() {
 void MainWindow::updateWindowTitle() {
     const QString fileName = m_currentFilePath.isEmpty() ? i18n::tr(m_language, "title.untitled", "Untitled", "未命名")
                                                          : QFileInfo(m_currentFilePath).fileName();
-    setWindowTitle(QString("%1 - %2").arg(fileName, i18n::tr(m_language, "title.app", "SVG Editor", "SVG 编辑器")));
+    setWindowTitle(
+        QString("%1 - %2").arg(fileName, i18n::tr(m_language, "title.app", "VectorGraphicsEditor", "矢量图形编辑器")));
 }
 
 void MainWindow::showTutorial() {

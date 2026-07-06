@@ -1,84 +1,45 @@
 ---
-layout: default
+layout: two-cols
 transition: slide-left
 ---
 
-# 策略模式 · 创建交互
+# 核心数据模型 `ShapeData`
 
-<div style="height:2px;width:32px;background:#2d7ff9;margin:0.5rem 0 1.5rem 0;"></div>
+<div class="h-[2px] w-10 bg-sky-500 mt-2 mb-5"></div>
 
-<div class="dim" style="font-size:0.85rem;margin-bottom:1rem;">ICreationStrategy — 6 个纯虚函数，同一接口两种实现</div>
+::left::
 
-<div style="display:flex;gap:0.5rem;margin-bottom:1.5rem;font-size:0.75rem;font-family:monospace;">
-<span style="background:#f5f5f5;padding:0.2rem 0.6rem;border-radius:3px;">begin(pt)</span>
-<span style="background:#f5f5f5;padding:0.2rem 0.6rem;border-radius:3px;">update(pt)</span>
-<span style="background:#f5f5f5;padding:0.2rem 0.6rem;border-radius:3px;">finish(pt)</span>
-<span style="background:#f5f5f5;padding:0.2rem 0.6rem;border-radius:3px;">cancel()</span>
-<span style="background:#f5f5f5;padding:0.2rem 0.6rem;border-radius:3px;">inProgress()</span>
-<span style="background:#f5f5f5;padding:0.2rem 0.6rem;border-radius:3px;">isPreviewItem()</span>
-</div>
-
-<div class="grid" style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
-
-<div style="border:1px solid #e8e8e8;border-radius:6px;padding:0.8rem 1rem;">
-
-<div style="font-weight:600;font-size:0.9rem;margin-bottom:0.3rem;">DragCreationStrategy</div>
-<div class="dim" style="font-size:0.75rem;margin-bottom:0.5rem;">Line / Circle / Ellipse / Rectangle</div>
-
-```cpp
-void begin(pt) {
-    m_dragStart = pt;
-    m_drawing = true;
-    createPreview(pt);
-}
-void update(pt) {
-    auto data =
-      buildDragShapeData(pt);
-    m_preview->setData(data);
-}
-void finish(pt) {
-    if (size >= 1.0) finalize();
-    else cancel();
-}
+```cpp {1|2-7|8-9}
+struct ShapeData {
+    QString id;
+    ShapeType type = ShapeType::Rectangle;
+    QVector<QPointF> points;
+    QRectF rect;
+    ShapeStyle style;
+    QTransform transform;
+    qreal zValue = 0.0;
+};
 ```
 
+<div class="mt-4 text-xs text-slate-400">真实定义位于 `core/ShapeData.h`，它是跨 `core / graphics / canvas / ui` 的唯一公共数据结构。</div>
+
+::right::
+
+<div class="space-y-4 text-sm">
+  <div v-click class="rounded-xl border border-slate-200 p-4">
+    <div class="font-semibold text-slate-700 mb-2">单一边界模型</div>
+    <div class="text-slate-500">界面、图形、文件 I/O 都通过 `ShapeData` 交换信息，避免把 `QGraphicsItem` 之类的视图对象泄漏到核心层。</div>
+  </div>
+  <div v-click class="rounded-xl border border-slate-200 p-4">
+    <div class="font-semibold text-slate-700 mb-2">几何语义按类型切换</div>
+    <div class="text-slate-500">`Point / Line / Polyline / Polygon` 用 `points`，`Circle / Ellipse / Rectangle` 用 `rect`，同一结构统一承载七种图形。</div>
+  </div>
+  <div v-click class="rounded-xl border border-slate-200 p-4">
+    <div class="font-semibold text-slate-700 mb-2">配套规则</div>
+    <div class="text-slate-500">`normalizedShapeData()` 负责负宽高归一化、圆形外接框正方形化；JSON 字段名是稳定持久化契约。</div>
+  </div>
 </div>
-
-<div style="border:1px solid #e8e8e8;border-radius:6px;padding:0.8rem 1rem;">
-
-<div style="font-weight:600;font-size:0.9rem;margin-bottom:0.3rem;">PathCreationStrategy</div>
-<div class="dim" style="font-size:0.75rem;margin-bottom:0.5rem;">Polyline / Polygon</div>
-
-```cpp
-void begin(pt) {
-    m_points.append(pt);
-    if (m_points.size() == 1)
-        createPreview(pt);
-}
-void finish(pt) {
-    m_points.append(pt);
-    // 双击或 Enter 完成
-}
-void cancel() {
-    removePreview();
-    m_points.clear();
-}
-```
-
-</div>
-
-</div>
-
-<v-click>
-
-<div style="margin-top:1rem;padding:0.6rem 1rem;background:#fafafa;border:1px solid #eee;border-radius:4px;font-size:0.85rem;">
-
-CanvasView 持有 3 个 <code>std::unique_ptr&lt;ICreationStrategy&gt;</code>，通过 <code>currentCreationStrategy()</code> 按 <code>m_tool</code> 分发到对应策略。
-
-</div>
-
-</v-click>
 
 <!--
-策略模式是项目的核心交互机制。ICreationStrategy定义6个纯虚函数作为创建算法的统一接口，两个派生类实现完全不同的交互方式。DragCreationStrategy适用于拖拽创建：鼠标按下记录起点，移动时实时更新预览，释放时检查最小尺寸后创建正式图形。PathCreationStrategy适用于多顶点输入：每次点击新增一个顶点，双击或回车完成。最小尺寸1像素的检查防止用户创建误触级别的微小图形。
+如果老师问为什么这里用 struct：因为它是纯数据容器，字段需要在多个层之间直接读写，没有额外封装不变式。真正的行为，比如归一化、平移、序列化，都放在自由函数里。
 -->

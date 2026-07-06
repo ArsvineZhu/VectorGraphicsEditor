@@ -3,46 +3,33 @@ layout: default
 transition: slide-left
 ---
 
-# 现场演示
+# 关键设计取舍 / 难点解决
 
-<div style="height:2px;width:32px;background:#2d7ff9;margin:0.5rem 0 1.5rem 0;"></div>
+<div class="h-[2px] w-10 bg-sky-500 mt-2 mb-5"></div>
 
-<div class="dim" style="font-size:0.85rem;margin-bottom:1.5rem;">启动客户端 · 功能展示</div>
-
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;max-width:40rem;margin:0 auto;">
-
-<div v-click style="border:1px solid #e8e8e8;border-radius:6px;padding:0.8rem 1rem;font-size:0.9rem;">
-<span style="color:#2d7ff9;font-weight:700;">01</span> 选择工具
-<div class="dim" style="font-size:0.75rem;">点击选中 · 拖拽移动 · 手柄缩放 · Shift 等比</div>
+<div class="grid grid-cols-2 gap-4 text-sm">
+  <div v-click class="rounded-xl border border-slate-200 p-5">
+    <div class="font-semibold text-slate-700 mb-2">数据与视图分离</div>
+    <div class="text-slate-500">`CanvasView` 不直接读写 `ShapeItem` 内部状态，统一通过 `ShapeData` 和工厂 / setter 交互，序列化更稳定。</div>
+  </div>
+  <div v-click class="rounded-xl border border-slate-200 p-5">
+    <div class="font-semibold text-slate-700 mb-2">防重入编辑面板</div>
+    <div class="text-slate-500">`m_updatingWidgets` 阻断 “程序更新控件 → valueChanged → 再次 emit” 的死循环，这是属性面板最关键的稳定器。</div>
+  </div>
+  <div v-click class="rounded-xl border border-slate-200 p-5">
+    <div class="font-semibold text-slate-700 mb-2">选择变换数学抽象</div>
+    <div class="text-slate-500">复杂的缩放 / 保比例 / 防翻转没有硬塞进 `mouseMoveEvent`，而是抽成 `SelectionFrame + CanvasGeometry` 组合。</div>
+  </div>
+  <div v-click class="rounded-xl border border-slate-200 p-5">
+    <div class="font-semibold text-slate-700 mb-2">文件格式的保守约束</div>
+    <div class="text-slate-500">版本固定为 2，transform 明确拒绝旋转，减少了 I/O 语义分歧，也让测试边界更清晰。</div>
+  </div>
 </div>
 
-<div v-click style="border:1px solid #e8e8e8;border-radius:6px;padding:0.8rem 1rem;font-size:0.9rem;">
-<span style="color:#2d7ff9;font-weight:700;">02</span> 绘制工具
-<div class="dim" style="font-size:0.75rem;">6 种工具：拖拽创建 vs 逐点创建</div>
-</div>
-
-<div v-click style="border:1px solid #e8e8e8;border-radius:6px;padding:0.8rem 1rem;font-size:0.9rem;">
-<span style="color:#2d7ff9;font-weight:700;">03</span> 属性面板
-<div class="dim" style="font-size:0.75rem;">几何编辑 · 颜色 · 描边 · 线型 · 填充</div>
-</div>
-
-<div v-click style="border:1px solid #e8e8e8;border-radius:6px;padding:0.8rem 1rem;font-size:0.9rem;">
-<span style="color:#2d7ff9;font-weight:700;">04</span> 文件操作
-<div class="dim" style="font-size:0.75rem;">保存 .vgjson · 打开 · PNG 导出</div>
-</div>
-
-<div v-click style="border:1px solid #e8e8e8;border-radius:6px;padding:0.8rem 1rem;font-size:0.9rem;">
-<span style="color:#2d7ff9;font-weight:700;">05</span> 中英文切换
-<div class="dim" style="font-size:0.75rem;">一键切换 · 全部 UI 即时更新</div>
-</div>
-
-<div v-click style="border:1px solid #e8e8e8;border-radius:6px;padding:0.8rem 1rem;font-size:0.9rem;">
-<span style="color:#2d7ff9;font-weight:700;">06</span> 深色/浅色主题
-<div class="dim" style="font-size:0.75rem;">Fusion · 完整调色板 · 系统跟随</div>
-</div>
-
+<div v-click class="mt-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+  我在这个项目里优先选择“可解释、可测试、可维护”的解，而不是短期内最省代码的解。
 </div>
 
 <!--
-现场演示六个功能点：选择工具的交互流程——点击选中、拖拽移动、手柄缩放、Shift保持比例、Esc取消。6种绘制工具拖拽类和路径点击类的交互区别。属性面板的实时联动和反重入保护。文件I/O保存vgjson再打开验证。中英文切换和主题切换的即时效果。
+这页适合回答“你觉得自己项目里最有价值的设计是什么”。可以把它理解成答辩里的方法论总结：哪些地方是主动设计出来的，而不是功能自然堆出来的。
 -->

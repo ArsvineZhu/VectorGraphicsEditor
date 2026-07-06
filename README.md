@@ -1,4 +1,4 @@
-# SVG Editor
+# VectorGraphicsEditor
 
 轻量级桌面矢量图形编辑器。C++20 + Qt 6.12 Widgets（Graphics View 框架），支持点、线、折线、多边形、圆、椭圆、矩形 7 种图形的绘制、编辑、保存与导出。
 
@@ -46,7 +46,7 @@
 ## 快速开始
 
 ```bash
-cd SVG_Editor
+cd VectorGraphicsEditor
 
 # 配置（以 macOS Debug 为例）
 cmake --preset darwin-debug
@@ -58,7 +58,7 @@ cmake --build --preset build-darwin-debug
 ctest --preset test-darwin-debug --output-on-failure
 
 # 启动
-open ./out/build/darwin-debug/SVG_Editor.app
+open ./out/build/darwin-debug/VectorGraphicsEditor.app
 ```
 
 其他平台的具体命令见 [构建与运行](#构建与运行)。
@@ -124,7 +124,7 @@ PropertyPanel 控件值改变
 ## 源码结构
 
 ```
-SVG_Editor/
+VectorGraphicsEditor/
 ├── CMakeLists.txt                     # 根 CMake：C++20、Qt6 AUTOMOC、format/lint/typecheck 目标
 ├── CMakePresets.json                  # 三平台 × 双模式构建/测试预设
 ├── .clang-format                      # LLVM 风格（4 空格、120 列）
@@ -132,8 +132,8 @@ SVG_Editor/
 ├── .editorconfig                      # UTF-8 / LF / 4 空格
 ├── README.md                          # 本文件
 ├── description.md                     # 详细项目分析（供答辩 PPT 生成用）
-├── SVG_Editor/
-│   ├── CMakeLists.txt                 # svg_editor_core（静态库）+ SVG_Editor（可执行文件）
+├── VectorGraphicsEditor/
+│   ├── CMakeLists.txt                 # vector_graphics_editor_core（静态库）+ VectorGraphicsEditor（可执行文件）
 │   ├── app/
 │   │   └── main.cpp                   # [entry] 应用入口
 │   ├── core/                          # [core] 零 Widgets 依赖，可被任意层引用
@@ -267,7 +267,7 @@ cmake --build --preset build-darwin-debug
 ctest --preset test-darwin-debug --output-on-failure
 
 # 启动
-open ./out/build/darwin-debug/SVG_Editor.app
+open ./out/build/darwin-debug/VectorGraphicsEditor.app
 ```
 
 ### Linux
@@ -282,7 +282,7 @@ cmake --build --preset build-linux-debug
 ctest --preset test-linux-debug --output-on-failure
 
 # 启动
-./out/build/linux-debug/SVG_Editor
+./out/build/linux-debug/VectorGraphicsEditor
 ```
 
 ### Windows (MSYS2 UCRT64)
@@ -301,7 +301,7 @@ cmake --build --preset build-ucrt64-debug
 ctest --preset test-ucrt64-debug --output-on-failure
 
 # 启动
-.\out\build\windows-ucrt64-debug\SVG_Editor.exe
+.\out\build\windows-ucrt64-debug\VectorGraphicsEditor.exe
 ```
 
 ---

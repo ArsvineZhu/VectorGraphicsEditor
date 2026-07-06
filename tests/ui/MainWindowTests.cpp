@@ -35,7 +35,7 @@ void MainWindowTests::initTestCase() {
     QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, m_settingsDir.path());
 
     QApplication::setOrganizationName("CourseProject");
-    QApplication::setApplicationName("SVG Editor");
+    QApplication::setApplicationName("VectorGraphicsEditor");
 }
 
 void MainWindowTests::toolsMenuContainsExpectedGroupedSubmenus() {

@@ -5,91 +5,55 @@ transition: slide-left
 
 # 项目概述
 
-<div style="height:2px;width:32px;background:#2d7ff9;margin:0.5rem 0 1.5rem 0;"></div>
+<div class="h-[2px] w-10 bg-sky-500 mt-2 mb-6"></div>
 
-<div class="grid grid-cols-3 gap-4" style="margin-bottom:2rem;">
-
-<div v-click class="card">
-<div class="num">49</div>
-<div class="lbl">源文件</div>
-<div class="sml">26 .cpp + 23 .h</div>
-</div>
-
-<div v-click class="card">
-<div class="num">11,014</div>
-<div class="lbl">总代码行数</div>
-<div class="sml">含测试 ~2000 行</div>
-</div>
-
-<div v-click class="card">
-<div class="num">40</div>
-<div class="lbl">测试用例</div>
-<div class="sml">5 测试模块</div>
-</div>
-
+<div class="grid grid-cols-4 gap-4 mb-7">
+  <div v-click class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-center">
+    <div class="text-3xl font-bold text-sky-500">44</div>
+    <div class="mt-1 text-sm text-slate-700">源码文件</div>
+    <div class="text-xs text-slate-400">`VectorGraphicsEditor/*.cpp + *.h`</div>
+  </div>
+  <div v-click class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-center">
+    <div class="text-3xl font-bold text-sky-500">4430</div>
+    <div class="mt-1 text-sm text-slate-700">源码行数</div>
+    <div class="text-xs text-slate-400">不含 tests 目录</div>
+  </div>
+  <div v-click class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-center">
+    <div class="text-3xl font-bold text-sky-500">5 / 40</div>
+    <div class="mt-1 text-sm text-slate-700">测试模块 / 用例</div>
+    <div class="text-xs text-slate-400">Qt Test + CTest</div>
+  </div>
+  <div v-click class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-center">
+    <div class="text-3xl font-bold text-sky-500">7</div>
+    <div class="mt-1 text-sm text-slate-700">基础图形</div>
+    <div class="text-xs text-slate-400">点、线、面、圆形族</div>
+  </div>
 </div>
 
 <v-clicks>
 
-<div class="row">
-<span class="dim">技术栈</span>
-<span>C++20 · Qt 6.8 (Core/Gui/Widgets) · CMake ≥ 3.24 · Ninja</span>
+<div class="flex border-b border-slate-100 py-3 text-sm">
+  <div class="w-28 shrink-0 text-slate-400 font-medium">项目定位</div>
+  <div class="text-slate-700">轻量级桌面矢量图形编辑器，覆盖绘制、选择、编辑、存储、导出完整闭环。</div>
 </div>
 
-<div class="row">
-<span class="dim">架构</span>
-<span>core → graphics → canvas → ui，strict 单向依赖</span>
+<div class="flex border-b border-slate-100 py-3 text-sm">
+  <div class="w-28 shrink-0 text-slate-400 font-medium">技术栈</div>
+  <div class="text-slate-700">C++20、Qt 6 Widgets / Graphics View、CMake Presets、Ninja。</div>
 </div>
 
-<div class="row">
-<span class="dim">工具链</span>
-<span>clang-format · clang-tidy (bugprone/analyzer/modernize) · Qt Test + CTest</span>
+<div class="flex border-b border-slate-100 py-3 text-sm">
+  <div class="w-28 shrink-0 text-slate-400 font-medium">输出能力</div>
+  <div class="text-slate-700">自定义 `.vgjson` 文件格式、PNG 导出、运行时中英文切换、系统 / 明亮 / 深色主题。</div>
 </div>
 
-<div class="row">
-<span class="dim">跨平台</span>
-<span>6 CMake 预设: Windows UCRT64 / Linux / macOS，各含 Debug/Release</span>
+<div class="flex py-3 text-sm">
+  <div class="w-28 shrink-0 text-slate-400 font-medium">课程价值</div>
+  <div class="text-slate-700">把继承、多态、抽象类、静态成员、文件 I/O、友元测试等知识点落到了一个真实可运行系统里。</div>
 </div>
 
 </v-clicks>
 
-<style>
-.card {
-  border: 1px solid #e8e8e8;
-  border-radius: 6px;
-  padding: 1.2rem;
-  text-align: center;
-  background: #fafafa;
-}
-.card .num {
-  font-size: 2rem;
-  font-weight: 700;
-  color: #2d7ff9;
-}
-.card .lbl {
-  font-size: 0.85rem;
-  color: #333;
-  margin-top: 0.2rem;
-}
-.card .sml {
-  font-size: 0.7rem;
-  color: #999;
-  margin-top: 0.15rem;
-}
-.row {
-  display: flex;
-  gap: 1.5rem;
-  padding: 0.6rem 0;
-  border-bottom: 1px solid #f0f0f0;
-  font-size: 0.9rem;
-}
-.row .dim {
-  color: #999;
-  min-width: 5rem;
-  font-weight: 500;
-}
-</style>
-
 <!--
-项目概况：49个源文件约11000行代码，40个测试用例覆盖核心逻辑。C++20标准，Qt6框架，CMake构建系统。四层严格单向依赖，核心层不依赖Qt Widgets。工具链配置了clang-format和clang-tidy保证代码质量。跨平台支持Windows/Linux/macOS三平台各两种构建配置。
+这一页先建立量级感：项目不是 demo 级别，而是有明确模块边界、文件格式和测试体系的课程实践。这里的数字都来自当前仓库状态，后面再展开它们分别意味着什么。
 -->

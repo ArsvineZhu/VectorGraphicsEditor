@@ -21,8 +21,8 @@
 int main(int argc, char* argv[]) {
     // 1) Qt GUI 程序的根对象；持有事件循环、字体、调色板、剪贴板等
     QApplication app(argc, argv);
-    // 2) 持久化标识：QSettings 会写到 CourseProject/SVG Editor/ 路径下
-    QApplication::setApplicationName("SVG Editor");
+    // 2) 持久化标识：QSettings 会写到 CourseProject/VectorGraphicsEditor/ 路径下
+    QApplication::setApplicationName("VectorGraphicsEditor");
     QApplication::setOrganizationName("CourseProject");
 
     // 3) 主窗口：构造时即完成 UI / 工具栏 / 菜单 / 信号的装配

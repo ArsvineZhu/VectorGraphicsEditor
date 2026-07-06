@@ -3,44 +3,53 @@ layout: default
 transition: slide-left
 ---
 
-# 设计决策
+# 测试与质量保障
 
-<div style="height:2px;width:32px;background:#2d7ff9;margin:0.5rem 0 1.5rem 0;"></div>
+<div class="h-[2px] w-10 bg-sky-500 mt-2 mb-5"></div>
 
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
-
-<div v-click style="border:1px solid #e8e8e8;border-radius:6px;padding:0.8rem 1rem;">
-<div style="font-weight:600;font-size:0.9rem;">struct 而非 class</div>
-<div style="font-size:0.8rem;color:#666;">ShapeData、SelectionFrame 等纯数据容器用 struct，避免冗余 public 声明</div>
+<div class="grid grid-cols-4 gap-4 mb-6">
+  <div v-click class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-center">
+    <div class="text-3xl font-bold text-sky-500">5</div>
+    <div class="text-sm text-slate-700 mt-1">测试模块</div>
+  </div>
+  <div v-click class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-center">
+    <div class="text-3xl font-bold text-sky-500">40</div>
+    <div class="text-sm text-slate-700 mt-1">测试用例</div>
+  </div>
+  <div v-click class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-center">
+    <div class="text-3xl font-bold text-sky-500">2</div>
+    <div class="text-sm text-slate-700 mt-1">静态检查</div>
+    <div class="text-xs text-slate-400">format / lint</div>
+  </div>
+  <div v-click class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-center">
+    <div class="text-3xl font-bold text-sky-500">3</div>
+    <div class="text-sm text-slate-700 mt-1">调试平台</div>
+    <div class="text-xs text-slate-400">Windows / Linux / macOS</div>
+  </div>
 </div>
 
-<div v-click style="border:1px solid #e8e8e8;border-radius:6px;padding:0.8rem 1rem;">
-<div style="font-weight:600;font-size:0.9rem;">JSON 而非二进制</div>
-<div style="font-size:0.8rem;color:#666;">可读可调试、无字节序、Qt 原生支持、字段扩展不改解析器</div>
-</div>
-
-<div v-click style="border:1px solid #e8e8e8;border-radius:6px;padding:0.8rem 1rem;">
-<div style="font-weight:600;font-size:0.9rem;">std::function 依赖注入</div>
-<div style="font-size:0.8rem;color:#666;">策略与 View 完全解耦，6 个回调替代接口类，测试可注入 mock</div>
-</div>
-
-<div v-click style="border:1px solid #e8e8e8;border-radius:6px;padding:0.8rem 1rem;">
-<div style="font-weight:600;font-size:0.9rem;">enum class : std::uint8_t</div>
-<div style="font-size:0.8rem;color:#666;">强类型作用域 + 指定底层类型节省空间 + 无隐式 int 转换</div>
-</div>
-
-<div v-click style="border:1px solid #e8e8e8;border-radius:6px;padding:0.8rem 1rem;">
-<div style="font-weight:600;font-size:0.9rem;">静态工厂 + 静态工具</div>
-<div style="font-size:0.8rem;color:#666;">FileManager、ShapeFactory 无状态设计，纯函数式接口，调用简洁</div>
-</div>
-
-<div v-click style="border:1px solid #e8e8e8;border-radius:6px;padding:0.8rem 1rem;">
-<div style="font-weight:600;font-size:0.9rem;">unique_ptr RAII 管理</div>
-<div style="font-size:0.8rem;color:#666;">策略对象自动生命周期，异常安全，所有权语义明确</div>
-</div>
-
+<div class="grid grid-cols-2 gap-5 text-sm">
+  <div class="rounded-xl border border-slate-200 p-5">
+    <div class="font-semibold text-slate-700 mb-3">测试覆盖点</div>
+    <ul class="space-y-2 text-slate-600">
+      <li v-click><code>ShapeDataTests</code>：序列化往返、归一化、transform 合成、SelectionFrame 映射。</li>
+      <li v-click><code>FileManagerTests</code>：文档读写、版本校验、非法 shape 和重复 ID。</li>
+      <li v-click><code>CanvasGeometryTests</code>：等比缩放、正交化、防翻转、frame-to-frame 映射。</li>
+      <li v-click><code>ShapeItemTests</code>：路径构建、命中区域、preview 行为。</li>
+      <li v-click><code>MainWindowTests</code>：<code>Tools</code> 菜单 1 / 3 / 4 分组回归。</li>
+    </ul>
+  </div>
+  <div class="rounded-xl border border-slate-200 p-5">
+    <div class="font-semibold text-slate-700 mb-3">质量门禁</div>
+    <ul class="space-y-2 text-slate-600">
+      <li v-click><code>clang-format --dry-run --Werror</code> 保证格式一致。</li>
+      <li v-click><code>clang-tidy</code> 检查 bugprone / analyzer / modernize / performance 问题。</li>
+      <li v-click><code>ctest --output-on-failure</code> 统一跑自动化回归。</li>
+      <li v-click>关键逻辑尽量放在可单测的 core 层，而不是只能手点验证的 UI 层。</li>
+    </ul>
+  </div>
 </div>
 
 <!--
-这里总结了6个关键设计决策。纯数据容器用struct减少boilerplate。JSON格式权衡了可读性、调试体验和跨平台兼容性。依赖注入使用std::function而非定义新的接口类，更轻量灵活。所有enum class指定底层类型为uint8_t。静态类避免不必要的对象生命周期管理。unique_ptr保证策略对象的自动释放和异常安全。
+这页强调“可验证性”。课程项目最容易被问到“你怎么证明它稳定”。我的回答不是只说“我自己点过很多次”，而是给出明确的测试模块、用例数量和质量门禁。
 -->

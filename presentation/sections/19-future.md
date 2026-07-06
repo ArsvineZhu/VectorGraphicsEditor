@@ -1,68 +1,48 @@
 ---
-layout: default
+layout: two-cols-header
 transition: slide-left
 ---
 
-# 改进方向
+# 演示与问答提示
 
-<div style="height:2px;width:32px;background:#2d7ff9;margin:0.5rem 0 1.5rem 0;"></div>
+<div class="text-sm text-slate-500 mb-2">最后一页不再讲新实现，而是把现场演示路线和高频提问点提前准备好。</div>
 
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;">
+::left::
 
-<div>
+<div class="rounded-xl border border-slate-200 bg-slate-50 p-5 text-sm h-full">
+  <div class="font-semibold text-slate-700 mb-3">建议 demo 路线</div>
+  <v-clicks>
 
-<div style="font-weight:600;font-size:0.9rem;margin-bottom:0.75rem;color:#2d7ff9;">近期</div>
+  1. 选择 `Rectangle` 工具拖出一个矩形。
+  2. 在 `PropertyPanel` 修改描边宽度、线型和填充色。
+  3. 框选多个图形，拖四角手柄演示缩放，按住 `Shift` 展示等比约束。
+  4. `Ctrl+C / Ctrl+V` 演示深拷贝和 16px 粘贴偏移。
+  5. 保存为 `.vgjson`，重新打开验证持久化正确；最后导出 PNG。
 
-<div v-click style="border:1px solid #e8e8e8;border-radius:4px;padding:0.6rem 0.8rem;margin-bottom:0.5rem;font-size:0.85rem;">
-<strong>完整 Undo/Redo</strong><br>
-<span class="dim" style="font-size:0.75rem;">QUndoStack + QUndoCommand，多级撤销功能</span>
+  </v-clicks>
 </div>
 
-<div v-click style="border:1px solid #e8e8e8;border-radius:4px;padding:0.6rem 0.8rem;margin-bottom:0.5rem;font-size:0.85rem;">
-<strong>CanvasView 拆分</strong><br>
-<span class="dim" style="font-size:0.75rem;">提取 SelectionManager、TransformManager</span>
-</div>
+::right::
 
-<div v-click style="border:1px solid #e8e8e8;border-radius:4px;padding:0.6rem 0.8rem;margin-bottom:0.5rem;font-size:0.85rem;">
-<strong>更多图形类型</strong><br>
-<span class="dim" style="font-size:0.75rem;">贝塞尔曲线、星形、文本输入与编辑</span>
-</div>
-
-<div v-click style="border:1px solid #e8e8e8;border-radius:4px;padding:0.6rem 0.8rem;font-size:0.85rem;">
-<strong>图层系统</strong><br>
-<span class="dim" style="font-size:0.75rem;">Layer 数据结构 + 图层面板</span>
-</div>
-
-</div>
-
-<div>
-
-<div style="font-weight:600;font-size:0.9rem;margin-bottom:0.75rem;color:#2d7ff9;">远期</div>
-
-<div v-click style="border:1px solid #e8e8e8;border-radius:4px;padding:0.6rem 0.8rem;margin-bottom:0.5rem;font-size:0.85rem;">
-<strong>插件系统</strong><br>
-<span class="dim" style="font-size:0.75rem;">IShapePlugin + QPluginLoader 动态加载</span>
-</div>
-
-<div v-click style="border:1px solid #e8e8e8;border-radius:4px;padding:0.6rem 0.8rem;margin-bottom:0.5rem;font-size:0.85rem;">
-<strong>SVG 原生导入/导出</strong><br>
-<span class="dim" style="font-size:0.75rem;">QSvgRenderer / QSvgGenerator 格式转换</span>
-</div>
-
-<div v-click style="border:1px solid #e8e8e8;border-radius:4px;padding:0.6rem 0.8rem;margin-bottom:0.5rem;font-size:0.85rem;">
-<strong>性能优化</strong><br>
-<span class="dim" style="font-size:0.75rem;">BSP 树索引、LOD、OpenGL 加速</span>
-</div>
-
-<div v-click style="border:1px solid #e8e8e8;border-radius:4px;padding:0.6rem 0.8rem;font-size:0.85rem;">
-<strong>触摸手势</strong><br>
-<span class="dim" style="font-size:0.75rem;">Qt PinchGesture 双指缩放旋转</span>
-</div>
-
-</div>
-
+<div class="space-y-3 text-sm">
+  <div v-click class="rounded-xl border border-slate-200 p-4">
+    <div class="font-semibold text-slate-700">为什么 `ShapeData` 用 `struct`？</div>
+    <div class="text-slate-500">它是纯数据边界对象，字段跨层共享，行为放在自由函数中更清晰。</div>
+  </div>
+  <div v-click class="rounded-xl border border-slate-200 p-4">
+    <div class="font-semibold text-slate-700">为什么策略接口析构要 `virtual`？</div>
+    <div class="text-slate-500">策略通过基类指针管理，不加虚析构就无法安全销毁派生对象。</div>
+  </div>
+  <div v-click class="rounded-xl border border-slate-200 p-4">
+    <div class="font-semibold text-slate-700">为什么不直接继承 `QGraphicsItem`？</div>
+    <div class="text-slate-500">`QGraphicsObject` 同时提供图形项能力和 `QObject` 生态，更适合需要元对象支持的场景。</div>
+  </div>
+  <div v-click class="rounded-xl border border-slate-200 p-4">
+    <div class="font-semibold text-slate-700">属性面板为什么不会死循环？</div>
+    <div class="text-slate-500">因为 `setShapeData()` 期间开启 `m_updatingWidgets`，程序更新控件不会再次触发 emit。</div>
+  </div>
 </div>
 
 <!--
-改进方向分近远期。近期最高优先级是完整的Undo/Redo——当前单级Esc取消只能回退正在进行的操作，多级撤销需要引入QUndoStack框架。其次是重构CanvasView——当前约900行逻辑分布在3个cpp文件中。增加图形类型理论上需要修改7个文件。远期来看，插件系统可以让第三方扩展图形类型，SVG格式支持增强互操作性，性能优化应对大量图形场景，触摸手势适配更多设备。
+如果现场时间紧，这页可以只讲右边四个高频问题。它们基本覆盖了老师最常追问的继承、多态、数据建模和事件反馈环问题。还可以补充两个备用问题：为什么 JSON 版本固定为 2、为什么 transform 不支持旋转。
 -->

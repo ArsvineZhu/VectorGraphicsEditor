@@ -1,93 +1,44 @@
 ---
-layout: default
+layout: two-cols
 transition: slide-left
 ---
 
-# ShapeItem · 绘制与命中测试
+# 依赖注入与创建上下文
 
-<div style="height:2px;width:32px;background:#2d7ff9;margin:0.5rem 0 1.5rem 0;"></div>
+<div class="h-[2px] w-10 bg-sky-500 mt-2 mb-5"></div>
 
-<div class="dim" style="font-size:0.85rem;margin-bottom:1rem;">QPainterPath 构建 · 7 分支 · 描边扩展命中</div>
+::left::
 
-<div class="grid" style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;">
-
-<div>
-
-```cpp
-QPainterPath ShapeItem::
-buildBasePath() const {
-    switch (m_data.type) {
-    case Point:
-        path.addEllipse(pt, 3, 3);
-    case Line:
-        path.moveTo(p[0]);
-        path.lineTo(p[1]);
-    case Rectangle:
-        path.addRect(m_data.rect);
-    case Circle:
-        w = max(w, h);
-        path.addEllipse(rect);
-    case Polyline:
-        for (auto& p : m_data.points)
-            path.lineTo(p);
-    case Polygon:
-        for (auto& p : m_data.points)
-            path.lineTo(p);
-        path.closeSubpath();
-    }
-    return path;
-}
+```cpp {1|2-7}
+struct CreationContext {
+    std::function<qreal()> nextZValue;
+    std::function<ShapeStyle(ShapeType)> currentStyleFor;
+    std::function<void(const ShapeData&, bool)> addShape;
+    std::function<QString()> generateId;
+    std::function<std::optional<ShapeType>()> currentShapeType;
+    QGraphicsScene* scene = nullptr;
+};
 ```
 
-</div>
+<div class="mt-4 text-xs text-slate-400">`CanvasView` 在构造函数里一次性把回调注入三个创建策略。</div>
 
-<div>
+::right::
 
-<v-click>
-
-<div style="border:1px solid #e8e8e8;border-radius:6px;padding:1rem;">
-
-<div style="font-weight:600;font-size:0.85rem;margin-bottom:0.3rem;">命中测试 — shape()</div>
-
-```cpp
-QPainterPath ShapeItem::shape() const {
-    auto path = buildBasePath();
-    QPainterPathStroker stroker;
-    stroker.setWidth(
-        pen().widthF() +       // 描边宽度
-        kHitPaddingMinPx +     // = 8.0
-        kHitPaddingExtraPx);   // = 6.0
-    auto stroke =
-        stroker.createStroke(path);
-    return fillEnabled
-        ? path.united(stroke)
-        : stroke;
-}
-```
-
-</div>
-
-</v-click>
-
-<v-click>
-
-<div style="border:1px solid #e8e8e8;border-radius:6px;padding:0.8rem;margin-top:0.75rem;font-size:0.85rem;">
-
-**boundingRect vs shape**
-
-| | 用途 | 精确度 |
-|--|------|--------|
-| boundingRect | Qt 渲染裁剪 | 轴对齐矩形 + padding |
-| shape | 命中测试 | 精确路径 + 描边扩展 |
-
-</div>
-
-</v-click>
-
-</div>
-
+<div class="space-y-4 text-sm">
+  <div v-click class="rounded-xl border border-slate-200 p-4">
+    <div class="font-semibold text-slate-700 mb-2">为什么不用“策略直接依赖 CanvasView”</div>
+    <div class="text-slate-500">那样策略会反向耦合整个视图类，难以测试，也让职责边界变得模糊。</div>
+  </div>
+  <div v-click class="rounded-xl border border-slate-200 p-4">
+    <div class="font-semibold text-slate-700 mb-2">注入的内容</div>
+    <div class="text-slate-500">策略只拿到它真正需要的能力：生成 ID、查询当前样式、分配 z 值、把图形加入场景。</div>
+  </div>
+  <div v-click class="rounded-xl border border-slate-200 p-4">
+    <div class="font-semibold text-slate-700 mb-2">直接效果</div>
+    <div class="text-slate-500">`canvas` 层可以把算法和界面容器解耦，同一套策略既能驱动 preview item，也能最终落盘为真实图形。</div>
+  </div>
 </div>
 
 <!--
-ShapeItem的绘制通过buildBasePath构建QPainterPath，switch覆盖全部7种ShapeType。由于使用enum class且没有default分支，新增类型时编译器会警告遗漏。命中测试的关键在于shape和boundingRect的区分：boundingRect用于Qt的可见性判定和重绘区域计算，要求快速且保守；shape用于精确的鼠标点击判断。QPainterPathStroker把细线路径扩展为宽度等于描边宽度加padding的填充路径，这样细线也能被轻松选中。
+如果老师问“依赖注入体现在哪”，这里就是最直接的例子。CreationContext 不是为了炫技巧，而是为了让策略层只依赖一小组稳定能力，不需要知道 CanvasView 的全部内部状态。
 -->

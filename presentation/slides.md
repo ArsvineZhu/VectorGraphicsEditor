@@ -1,20 +1,20 @@
 ---
 theme: default
-title: SVG 矢量图形绘制系统
+title: 矢量图形编辑器课程设计答辩
 titleTemplate: '%s'
 lineNumbers: false
 highlighter: shiki
 info: |
-  ## SVG 矢量图形绘制系统
+  ## 矢量图形编辑器
   面向对象程序设计 · 课程设计答辩
-transition: fade
+transition: slide-left
 drawings:
   persist: false
 fonts:
   sans: Noto Sans SC
   mono: JetBrains Mono
 background: white
-layout: cover
+duration: 20min
 ---
 
 <!--

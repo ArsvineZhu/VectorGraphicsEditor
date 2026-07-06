@@ -1,50 +1,51 @@
 ---
 layout: default
 transition: slide-left
+hideInToc: true
 ---
 
-<div class="relative h-full flex flex-col justify-center" style="padding: 3rem 4rem;">
+<div class="relative h-full flex flex-col justify-center px-16 py-12">
 
-<!-- decorative circles -->
-<div class="absolute" style="top:-60px;right:-40px;width:200px;height:200px;border:1px solid #e0e0e0;border-radius:50%"></div>
-<div class="absolute" style="bottom:-40px;left:-30px;width:140px;height:140px;border:1px solid #eee;border-radius:50%"></div>
-<div class="absolute" style="top:40%;right:60px;width:6px;height:6px;border-radius:50%;background:#2d7ff9"></div>
-<div class="absolute" style="bottom:30%;left:80px;width:4px;height:4px;border-radius:50%;background:#2d7ff9"></div>
+<div class="absolute rounded-full border border-slate-200" style="top:-60px;right:-40px;width:220px;height:220px"></div>
+<div class="absolute rounded-full border border-slate-100" style="bottom:-30px;left:-20px;width:150px;height:150px"></div>
+<div class="absolute rounded-full bg-sky-500" style="top:38%;right:72px;width:8px;height:8px"></div>
+<div class="absolute rounded-full bg-sky-500/70" style="bottom:28%;left:92px;width:6px;height:6px"></div>
 
-<div class="relative" style="z-index:1;max-width:80%">
+<div class="relative z-10 max-w-4xl">
+  <div class="text-xs uppercase tracking-[0.28em] text-slate-400 mb-6">Object-Oriented Programming · Course Project Defense</div>
+  <h1 class="m-0 text-5xl leading-tight font-bold text-slate-800">
+    矢量图形
+    <span class="text-sky-500">编辑器</span>
+  </h1>
+  <div class="mt-6 mb-7 h-[3px] w-14 bg-sky-500"></div>
 
-<div class="text-xs tracking-widest" style="color:#999;margin-bottom:1.5rem;letter-spacing:0.15em;">面向对象程序设计 · 课程设计</div>
+  <div class="flex flex-wrap gap-3 mb-8 text-sm">
+    <span class="px-3 py-1 rounded bg-slate-100 text-slate-600 border border-slate-200">C++20</span>
+    <span class="px-3 py-1 rounded bg-slate-100 text-slate-600 border border-slate-200">Qt 6 Widgets</span>
+    <span class="px-3 py-1 rounded bg-slate-100 text-slate-600 border border-slate-200">CMake Presets</span>
+    <span class="px-3 py-1 rounded bg-slate-100 text-slate-600 border border-slate-200">Qt Test + CTest</span>
+  </div>
 
-<h1 style="font-size:2.8rem;font-weight:700;line-height:1.2;margin:0 0 0.3rem 0;letter-spacing:-0.02em;">SVG 矢量图形<span style="color:#2d7ff9">绘制系统</span></h1>
+  <div class="grid grid-cols-3 gap-4 text-sm">
+    <div class="rounded-lg border border-slate-200 bg-white/80 p-4">
+      <div class="text-slate-400 mb-1">课程</div>
+      <div class="font-semibold text-slate-700">面向对象程序设计课程设计</div>
+    </div>
+    <div class="rounded-lg border border-slate-200 bg-white/80 p-4">
+      <div class="text-slate-400 mb-1">答辩信息</div>
+      <div class="font-semibold text-slate-700">学生姓名 / 学号（答辩前补充）</div>
+    </div>
+    <div class="rounded-lg border border-slate-200 bg-white/80 p-4">
+      <div class="text-slate-400 mb-1">时间</div>
+      <div class="font-semibold text-slate-700">2026 年 7 月</div>
+    </div>
+  </div>
 
-<div style="height:3px;width:48px;background:#2d7ff9;margin:1.5rem 0;"></div>
-
-<div class="flex flex-wrap gap-2" style="margin-bottom:2rem;">
-<span class="tag">C++20</span>
-<span class="tag">Qt6</span>
-<span class="tag">CMake / Ninja</span>
-<span class="tag">49 源文件</span>
+  <div class="mt-8 text-sm text-slate-400">题目 3：矢量图形处理系统 · 工程名：`VectorGraphicsEditor`</div>
 </div>
 
-<div class="text-sm" style="color:#999;">
-<span>2025 · github.com/anomalyco/SVG_Editor</span>
 </div>
-
-</div>
-
-</div>
-
-<style>
-.tag {
-  display: inline-block;
-  padding: 0.2rem 0.8rem;
-  font-size: 0.75rem;
-  color: #666;
-  background: #f5f5f5;
-  border-radius: 3px;
-}
-</style>
 
 <!--
-各位老师好。今天汇报的是基于C++20和Qt6开发的SVG矢量图形绘制系统，共49个源文件约11000行代码。实现了7种基本图形的创建、编辑、选中变换、文件序列化和PNG导出等功能。项目采用四层单向依赖架构，使用了策略模式、工厂模式等设计模式，配有多语言界面和深色/浅色主题。
+封面先把项目名称、课程背景和技术栈说清楚。学生姓名、学号和指导老师如果需要上屏，答辩前替换占位文本即可。这里的重点不是“做了个 GUI”，而是“围绕课程知识点实现了一个完整的桌面矢量图形编辑器”。
 -->
