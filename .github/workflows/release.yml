@@ -41,7 +41,6 @@ jobs:
           else
             TAG="${{ github.ref_name }}"
           fi
-          # Strip leading 'v' for CPack / package naming
           VERSION="${TAG#v}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -97,10 +96,8 @@ jobs:
           mkdir -p dist/portable
           EXE="$(find build -name VectorGraphicsEditor.exe -type f | head -1)"
           cp "$EXE" dist/portable/
-
           DEPLOYQT="$(which windeployqt 2>/dev/null || which windeployqt6)"
           "$DEPLOYQT" --release --compiler-runtime --dir dist/portable dist/portable/VectorGraphicsEditor.exe
-
           for dll in libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll; do
             [ -f "$MINGW_PREFIX/bin/$dll" ] && cp "$MINGW_PREFIX/bin/$dll" dist/portable/
           done
@@ -115,10 +112,12 @@ jobs:
 
       - name: Package NSIS installer
         run: |
+          cp packaging/windows/installer.nsi dist/portable/
           cd dist/portable
           makensis -V4 -DAPP_VERSION="${VERSION}" \
-            -DOUTFILE="../VectorGraphicsEditor-${VERSION}-windows-amd64-installer.exe" \
-            "${GITHUB_WORKSPACE}/packaging/windows/installer.nsi"
+            -DOUTFILE="VectorGraphicsEditor-${VERSION}-windows-amd64-installer.exe" \
+            installer.nsi
+          mv "VectorGraphicsEditor-${VERSION}-windows-amd64-installer.exe" ..
 
       - uses: actions/upload-artifact@v4
         with:
@@ -130,7 +129,7 @@ jobs:
 
   # ======================================================================
   #  Windows ARM64 — portable ZIP + NSIS installer
-  #  Requires github-hosted windows-11-arm runner.
+  #  MSYS2 CLANGARM64 没有 NSIS 包，从官方二进制发行版下载。
   # ======================================================================
   windows-arm64:
     name: Windows ARM64
@@ -157,7 +156,6 @@ jobs:
             mingw-w64-clang-aarch64-cmake
             mingw-w64-clang-aarch64-ninja
             mingw-w64-clang-aarch64-qt6-base
-            mingw-w64-clang-aarch64-nsis
 
       - name: Build Release
         run: >
@@ -185,6 +183,23 @@ jobs:
             [ -f "$MINGW_PREFIX/bin/$dll" ] && cp "$MINGW_PREFIX/bin/$dll" dist/portable/
           done
 
+      - name: Download NSIS (binary release)
+        shell: pwsh
+        run: |
+          $nsisUrl = "https://downloads.sourceforge.net/project/nsis/NSIS%203/3.10/nsis-3.10.zip"
+          try {
+            Invoke-WebRequest -Uri $nsisUrl -OutFile nsis.zip -MaximumRedirection 5
+          } catch {
+            Write-Host "Primary URL failed, trying mirror..."
+            Invoke-WebRequest -Uri "https://sourceforge.net/projects/nsis/files/NSIS%203/3.10/nsis-3.10.zip/download" -OutFile nsis.zip -MaximumRedirection 5
+          }
+          Expand-Archive nsis.zip -DestinationPath .
+          if (!(Test-Path "nsis-3.10\makensis.exe")) {
+            Write-Error "NSIS download failed: makensis.exe not found"
+            exit 1
+          }
+          echo "NSIS_HOME=$PWD\nsis-3.10" >> $env:GITHUB_ENV
+
       - name: Package portable ZIP
         shell: pwsh
         run: |
@@ -194,11 +209,15 @@ jobs:
             -Force
 
       - name: Package NSIS installer
+        shell: pwsh
         run: |
-          cd dist/portable
-          makensis -V4 -DAPP_VERSION="${VERSION}" \
-            -DOUTFILE="../VectorGraphicsEditor-${VERSION}-windows-arm64-installer.exe" \
-            "${GITHUB_WORKSPACE}/packaging/windows/installer.nsi"
+          copy packaging\windows\installer.nsi dist\portable\
+          cd dist\portable
+          & "$env:NSIS_HOME\makensis.exe" -V4 -DAPP_VERSION="$env:VERSION" `
+            -DOUTFILE="VectorGraphicsEditor-$env:VERSION-windows-arm64-installer.exe" `
+            installer.nsi
+          move "VectorGraphicsEditor-$env:VERSION-windows-arm64-installer.exe" ..
+          cd ..\..
 
       - uses: actions/upload-artifact@v4
         with:
@@ -218,6 +237,7 @@ jobs:
     env:
       TAG: ${{ needs.resolve-tag.outputs.tag }}
       VERSION: ${{ needs.resolve-tag.outputs.version }}
+      QT_QPA_PLATFORM: offscreen
 
     steps:
       - uses: actions/checkout@v4
@@ -240,8 +260,7 @@ jobs:
       - name: Deploy Qt frameworks
         run: |
           APP="$(find build -name VectorGraphicsEditor.app -type d | head -1)"
-          macdeployqt "$APP" -verbose=1
-          # Remove useless headers to shrink bundle
+          macdeployqt "$APP" -codesign=-
           find "$APP/Contents" -name '*.h' -delete 2>/dev/null || true
 
       - name: Create DMG
@@ -274,6 +293,7 @@ jobs:
     env:
       TAG: ${{ needs.resolve-tag.outputs.tag }}
       VERSION: ${{ needs.resolve-tag.outputs.version }}
+      QT_QPA_PLATFORM: offscreen
 
     steps:
       - uses: actions/checkout@v4
@@ -296,7 +316,7 @@ jobs:
       - name: Deploy Qt frameworks
         run: |
           APP="$(find build -name VectorGraphicsEditor.app -type d | head -1)"
-          macdeployqt "$APP" -verbose=1
+          macdeployqt "$APP" -codesign=-
           find "$APP/Contents" -name '*.h' -delete 2>/dev/null || true
 
       - name: Create DMG
@@ -329,6 +349,7 @@ jobs:
     env:
       TAG: ${{ needs.resolve-tag.outputs.tag }}
       VERSION: ${{ needs.resolve-tag.outputs.version }}
+      QT_QPA_PLATFORM: offscreen
 
     steps:
       - uses: actions/checkout@v4
@@ -374,13 +395,14 @@ jobs:
     env:
       TAG: ${{ needs.resolve-tag.outputs.tag }}
       VERSION: ${{ needs.resolve-tag.outputs.version }}
+      QT_QPA_PLATFORM: offscreen
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
-          dnf install -y cmake ninja-build gcc-c++ qt6-qtbase-devel rpm-build
+          dnf install -y git cmake ninja-build gcc-c++ qt6-qtbase-devel rpm-build
 
       - name: Build Release
         run: |
@@ -418,14 +440,15 @@ jobs:
     env:
       TAG: ${{ needs.resolve-tag.outputs.tag }}
       VERSION: ${{ needs.resolve-tag.outputs.version }}
+      QT_QPA_PLATFORM: offscreen
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
-          pacman -Syu --noconfirm
-          pacman -S --noconfirm cmake ninja gcc qt6-base
+          pacman -Syu --noconfirm --noprogressbar || true
+          pacman -S --noconfirm --noprogressbar git cmake ninja gcc qt6-base zstd
 
       - name: Build Release
         run: |

@@ -32,6 +32,20 @@ open ./out/build/darwin-debug/VectorGraphicsEditor.app
 
 ---
 
+## 平台支持
+
+| 平台 | 架构 | 打包格式 |
+|------|------|---------|
+| Windows | AMD64 (x86_64) | 便携版 ZIP / NSIS 安装包 (`.exe`) |
+| Windows | ARM64 | 便携版 ZIP / NSIS 安装包 (`.exe`) |
+| macOS | Intel (x86_64) | DMG (`.dmg`) |
+| macOS | Apple Silicon (ARM64) | DMG (`.dmg`) |
+| Linux | AMD64 (x86_64) | Debian (`.deb`) / Red Hat (`.rpm`) / Arch (`.pkg.tar.zst`) |
+
+Release 构建矩阵参见 [`.github/workflows/release.yml`](.github/workflows/release.yml)。
+
+---
+
 ## 架构
 
 项目按**四层严格分层**：`entry → ui → canvas → graphics → core`。详见 [docs/architecture.md](docs/architecture.md)。

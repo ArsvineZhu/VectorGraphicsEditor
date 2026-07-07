@@ -1,8 +1,8 @@
 ; ======================================================================
 ; VectorGraphicsEditor — NSIS Installer Script
 ; ======================================================================
-; Usage: makensis -DAPP_VERSION="1.0.0" -DOUTFILE="out.exe" installer.nsi
-; Must be run from the directory containing installed files (after cmake --install)
+; Runs from the portable directory (alongside the .exe and Qt DLLs).
+; Usage: cd dist/portable && makensis installer.nsi -DVERSION=x.y.z
 ; ======================================================================
 
 !include "MUI2.nsh"
@@ -30,18 +30,15 @@ RequestExecutionLevel admin
 Section "Install"
   SetOutPath "$INSTDIR"
 
-  ; Recursively include all files from current directory
-  File /r /x "*.nsi" /x "${OUTFILE}" "*"
+  ; Exclude the NSIS script itself and the generated installer from packaging
+  File /r /x "installer.nsi" /x "${OUTFILE}" "*"
 
-  ; Write uninstaller
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
-  ; Start menu shortcuts
   CreateDirectory "$SMPROGRAMS\VectorGraphicsEditor"
   CreateShortcut "$SMPROGRAMS\VectorGraphicsEditor\VectorGraphicsEditor.lnk" "$INSTDIR\VectorGraphicsEditor.exe"
   CreateShortcut "$SMPROGRAMS\VectorGraphicsEditor\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
 
-  ; Registry for Add/Remove Programs
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\VectorGraphicsEditor" \
     "DisplayName" "VectorGraphicsEditor"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\VectorGraphicsEditor" \
