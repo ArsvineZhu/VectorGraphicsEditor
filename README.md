@@ -37,11 +37,15 @@ open ./out/build/darwin-debug/VectorGraphicsEditor.app
 | 平台 | 架构 | 打包格式 |
 |------|------|---------|
 | Windows | AMD64 | 便携版 (`.zip`) / 安装包 (`.exe`) |
-| Windows | ARM64 | 便携版 (`.zip`) |
 | macOS | ARM64 (Apple Silicon) | DMG (`.dmg`) |
 | Linux | AMD64 | `.deb` / `.rpm` / `.pkg.tar.zst` |
 
 Release 构建矩阵参见 [`.github/workflows/release.yml`](.github/workflows/release.yml)。
+
+> **macOS 提示**：如果下载的 `.app` 打不开，在终端中执行以下命令清除隔离标记：
+> ```shell
+> sudo xattr -cr /Applications/VectorGraphicsEditor.app
+> ```
 
 ---
 
