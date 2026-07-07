@@ -188,15 +188,21 @@ void PropertyPanel::setupUi() {
     m_formLayout->addRow(QString(), m_strokeColorButton);
 
     m_strokeEnabledCheck = new QCheckBox(this);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     connect(m_strokeEnabledCheck, &QCheckBox::checkStateChanged, this, [this](Qt::CheckState state) {
-        if (m_updatingWidgets || !m_hasSelection) {
-            return;
-        }
-
+        if (m_updatingWidgets || !m_hasSelection) return;
         m_currentData.style.strokeEnabled = state == Qt::Checked;
         updateButtons();
         emit shapeEdited(m_currentData);
     });
+#else
+    connect(m_strokeEnabledCheck, &QCheckBox::stateChanged, this, [this](int state) {
+        if (m_updatingWidgets || !m_hasSelection) return;
+        m_currentData.style.strokeEnabled = state == Qt::Checked;
+        updateButtons();
+        emit shapeEdited(m_currentData);
+    });
+#endif
     m_formLayout->addRow(QString(), m_strokeEnabledCheck);
 
     m_lineWidthSpin = new QDoubleSpinBox(this);
@@ -224,15 +230,21 @@ void PropertyPanel::setupUi() {
     m_formLayout->addRow(QString(), m_lineStyleCombo);
 
     m_fillEnabledCheck = new QCheckBox(this);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     connect(m_fillEnabledCheck, &QCheckBox::checkStateChanged, this, [this](Qt::CheckState state) {
-        if (m_updatingWidgets || !m_hasSelection) {
-            return;
-        }
-        // 即使用户勾选，不支持填充的 type 也会被强制关闭
+        if (m_updatingWidgets || !m_hasSelection) return;
         m_currentData.style.fillEnabled = shapeSupportsFill(m_currentData.type) && state == Qt::Checked;
         updateButtons();
         emit shapeEdited(m_currentData);
     });
+#else
+    connect(m_fillEnabledCheck, &QCheckBox::stateChanged, this, [this](int state) {
+        if (m_updatingWidgets || !m_hasSelection) return;
+        m_currentData.style.fillEnabled = shapeSupportsFill(m_currentData.type) && state == Qt::Checked;
+        updateButtons();
+        emit shapeEdited(m_currentData);
+    });
+#endif
     m_formLayout->addRow(QString(), m_fillEnabledCheck);
 
     m_fillColorButton = new QPushButton(this);

@@ -287,11 +287,13 @@ void MainWindow::connectSignals() {
     connect(m_propertyPanel, &PropertyPanel::shapeEdited, m_canvasView, &CanvasView::updateSelectedShape);
     connect(m_canvasView, &CanvasView::deleteSelectionRequested, this, &MainWindow::deleteSelection);
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, this, [this](Qt::ColorScheme) {
         if (m_themeMode == ThemeMode::System) {
             applyApplicationTheme(*static_cast<QApplication*>(QApplication::instance()), ThemeMode::System);
         }
     });
+#endif
 }
 
 void MainWindow::retranslateUi() {

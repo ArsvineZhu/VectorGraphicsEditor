@@ -10,5 +10,4 @@ Checks: >
   readability-duplicate-include
 WarningsAsErrors: ''
 HeaderFilterRegex: '.*(VectorGraphicsEditor|tests)/.*'
-ExcludeHeaderFilterRegex: '.*/out/build/.*/.*_autogen/.*'
 FormatStyle: file

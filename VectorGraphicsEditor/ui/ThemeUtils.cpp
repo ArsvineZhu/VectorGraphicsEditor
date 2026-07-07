@@ -15,6 +15,7 @@
 
 #include <QApplication>
 #include <QGuiApplication>
+#include <QPalette>
 #include <QStyleHints>
 
 namespace {
@@ -74,7 +75,12 @@ ThemeMode resolvedThemeMode(ThemeMode mode) {
         return mode;
     }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     return QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark ? ThemeMode::Dark : ThemeMode::Light;
+#else
+    const QPalette& p = QGuiApplication::palette();
+    return p.color(QPalette::Window).lightness() < 128 ? ThemeMode::Dark : ThemeMode::Light;
+#endif
 }
 
 } // namespace
