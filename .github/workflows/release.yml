@@ -107,7 +107,7 @@ jobs:
         run: |
           Compress-Archive `
             -Path dist/portable/* `
-            -DestinationPath "dist/VectorGraphicsEditor-$env:VERSION-windows-amd64-portable.zip" `
+            -DestinationPath "dist/VectorGraphicsEditor-$env:VERSION-windows-amd64.zip" `
             -Force
 
       - name: Package NSIS installer
@@ -115,16 +115,16 @@ jobs:
           cp packaging/windows/installer.nsi dist/portable/
           cd dist/portable
           makensis -V4 -DAPP_VERSION="${VERSION}" \
-            -DOUTFILE="VectorGraphicsEditor-${VERSION}-windows-amd64-installer.exe" \
+            -DOUTFILE="VectorGraphicsEditor-${VERSION}-windows-amd64-setup.exe" \
             installer.nsi
-          mv "VectorGraphicsEditor-${VERSION}-windows-amd64-installer.exe" ..
+          mv "VectorGraphicsEditor-${VERSION}-windows-amd64-setup.exe" ..
 
       - uses: actions/upload-artifact@v4
         with:
           name: windows-amd64
           path: |
-            dist/VectorGraphicsEditor-*-windows-amd64-portable.zip
-            dist/VectorGraphicsEditor-*-windows-amd64-installer.exe
+            dist/VectorGraphicsEditor-*-windows-amd64.zip
+            dist/VectorGraphicsEditor-*-windows-amd64-setup.exe
           if-no-files-found: error
 
   # ======================================================================
@@ -187,13 +187,13 @@ jobs:
         run: |
           Compress-Archive `
             -Path dist/portable/* `
-            -DestinationPath "dist/VectorGraphicsEditor-$env:VERSION-windows-arm64-portable.zip" `
+            -DestinationPath "dist/VectorGraphicsEditor-$env:VERSION-windows-arm64.zip" `
             -Force
 
       - uses: actions/upload-artifact@v4
         with:
           name: windows-arm64
-          path: dist/VectorGraphicsEditor-*-windows-arm64-portable.zip
+          path: dist/VectorGraphicsEditor-*-windows-arm64.zip
           if-no-files-found: error
 
   # ======================================================================
@@ -316,7 +316,8 @@ jobs:
           cd build
           cpack -G DEB \
             -D APP_VERSION="${VERSION}" \
-            -D CPACK_DEBIAN_PACKAGE_MAINTAINER="CourseProject"
+            -D CPACK_DEBIAN_PACKAGE_MAINTAINER="CourseProject" \
+            -D CPACK_PACKAGE_FILE_NAME="VectorGraphicsEditor-${VERSION}-linux-amd64"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -361,7 +362,8 @@ jobs:
           cd build
           cpack -G RPM \
             -D APP_VERSION="${VERSION}" \
-            -D CPACK_RPM_PACKAGE_LICENSE="MIT"
+            -D CPACK_RPM_PACKAGE_LICENSE="MIT" \
+            -D CPACK_PACKAGE_FILE_NAME="VectorGraphicsEditor-${VERSION}-linux-amd64"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -406,7 +408,7 @@ jobs:
         run: |
           DESTDIR="$PWD/pkg" cmake --install build
           cd pkg
-          tar -caf "../VectorGraphicsEditor-${VERSION}-linux-x86_64.pkg.tar.zst" \
+          tar -caf "../VectorGraphicsEditor-${VERSION}-linux-amd64.pkg.tar.zst" \
             --zstd \
             --owner=0 --group=0 \
             .
@@ -414,7 +416,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: linux-arch
-          path: VectorGraphicsEditor-*-linux-x86_64.pkg.tar.zst
+          path: VectorGraphicsEditor-*-linux-amd64.pkg.tar.zst
           if-no-files-found: error
 
   # ======================================================================
