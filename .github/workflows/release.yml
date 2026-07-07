@@ -232,13 +232,10 @@ jobs:
           export HOMEBREW_NO_REQUIRE_TAP_TRUST=1
           APP="$(find build -name VectorGraphicsEditor.app -type d | head -1)"
           QT_DIR="$(brew --prefix qt)"
-<<<<<<< HEAD
           if [ -z "$QT_DIR" ] || [ ! -d "$QT_DIR" ]; then
             echo "ERROR: Could not determine Qt prefix. brew --prefix qt returned: '$QT_DIR'"
             exit 1
           fi
-=======
->>>>>>> a82cde9522f983f54ae6f291507e4284a0769b40
           # Create Frameworks dir and copy Qt libraries manually
           mkdir -p "$APP/Contents/Frameworks"
           for lib in QtCore QtGui QtWidgets QtDBus; do
