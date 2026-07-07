@@ -36,10 +36,10 @@ open ./out/build/darwin-debug/VectorGraphicsEditor.app
 
 | 平台 | 架构 | 打包格式 |
 |------|------|---------|
-| Windows | AMD64 (x86_64) | 便携版 ZIP / NSIS 安装包 (`.exe`) |
-| Windows | ARM64 | 便携版 ZIP (`.zip`) |
-| macOS | Apple Silicon (ARM64) | DMG (`.dmg`) |
-| Linux | AMD64 (x86_64) | Debian (`.deb`) / Red Hat (`.rpm`) / Arch (`.pkg.tar.zst`) |
+| Windows | AMD64 | 便携版 (`.zip`) / 安装包 (`.exe`) |
+| Windows | ARM64 | 便携版 (`.zip`) |
+| macOS | ARM64 (Apple Silicon) | DMG (`.dmg`) |
+| Linux | AMD64 | `.deb` / `.rpm` / `.pkg.tar.zst` |
 
 Release 构建矩阵参见 [`.github/workflows/release.yml`](.github/workflows/release.yml)。
 
