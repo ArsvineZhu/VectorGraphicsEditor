@@ -229,6 +229,7 @@ jobs:
 
       - name: Deploy Qt frameworks
         run: |
+          export HOMEBREW_NO_REQUIRE_TAP_TRUST=1
           APP="$(find build -name VectorGraphicsEditor.app -type d | head -1)"
           QT_DIR="$(brew --prefix qt)"
 <<<<<<< HEAD
