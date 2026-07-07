@@ -207,6 +207,7 @@ jobs:
       TAG: ${{ needs.resolve-tag.outputs.tag }}
       VERSION: ${{ needs.resolve-tag.outputs.version }}
       QT_QPA_PLATFORM: offscreen
+      HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
 
     steps:
       - uses: actions/checkout@v4
@@ -230,6 +231,10 @@ jobs:
         run: |
           APP="$(find build -name VectorGraphicsEditor.app -type d | head -1)"
           QT_DIR="$(brew --prefix qt)"
+          if [ -z "$QT_DIR" ] || [ ! -d "$QT_DIR" ]; then
+            echo "ERROR: Could not determine Qt prefix. brew --prefix qt returned: '$QT_DIR'"
+            exit 1
+          fi
           # Create Frameworks dir and copy Qt libraries manually
           mkdir -p "$APP/Contents/Frameworks"
           for lib in QtCore QtGui QtWidgets QtDBus; do
