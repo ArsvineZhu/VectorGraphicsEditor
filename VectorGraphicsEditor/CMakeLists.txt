@@ -84,3 +84,5 @@ target_link_libraries(VectorGraphicsEditor PRIVATE vector_graphics_editor_core Q
 if(COMMAND qt_finalize_executable)
   qt_finalize_executable(VectorGraphicsEditor)
 endif()
+
+install(TARGETS VectorGraphicsEditor RUNTIME DESTINATION . BUNDLE DESTINATION .)

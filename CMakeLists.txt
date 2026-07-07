@@ -104,3 +104,43 @@ add_custom_target(typecheck DEPENDS VectorGraphicsEditor)
 if(TARGET vector_graphics_editor_tests)
   add_dependencies(typecheck vector_graphics_editor_tests)
 endif()
+
+# ======================================================================
+#  CPack —— release 打包（DEB / RPM / NSIS）
+# ======================================================================
+set(CPACK_PACKAGE_NAME "VectorGraphicsEditor")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Lightweight desktop vector graphics editor")
+set(CPACK_PACKAGE_VENDOR "CourseProject")
+set(CPACK_RESOURCE_FILE_README "${CMAKE_SOURCE_DIR}/README.md")
+set(CPACK_PACKAGE_INSTALL_DIRECTORY "VectorGraphicsEditor")
+
+if(DEFINED APP_VERSION)
+  string(REGEX REPLACE "^v" "" APP_VERSION_STRIPPED "${APP_VERSION}")
+  string(REGEX MATCH "^([0-9]+)\\.([0-9]+)\\.([0-9]+)" _v "${APP_VERSION_STRIPPED}")
+  if(_v)
+    set(CPACK_PACKAGE_VERSION_MAJOR "${CMAKE_MATCH_1}")
+    set(CPACK_PACKAGE_VERSION_MINOR "${CMAKE_MATCH_2}")
+    set(CPACK_PACKAGE_VERSION_PATCH "${CMAKE_MATCH_3}")
+  endif()
+endif()
+if(NOT CPACK_PACKAGE_VERSION_MAJOR)
+  set(CPACK_PACKAGE_VERSION_MAJOR "1")
+  set(CPACK_PACKAGE_VERSION_MINOR "0")
+  set(CPACK_PACKAGE_VERSION_PATCH "0")
+endif()
+
+# DEB
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "CourseProject")
+set(CPACK_DEBIAN_PACKAGE_SECTION "graphics")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "qt6-base-dev (>= 6.2)")
+
+# RPM
+set(CPACK_RPM_PACKAGE_LICENSE "MIT")
+set(CPACK_RPM_PACKAGE_GROUP "Applications/Graphics")
+set(CPACK_RPM_PACKAGE_REQUIRES "qt6-qtbase >= 6.2")
+
+# NSIS (Windows)
+set(CPACK_NSIS_DISPLAY_NAME "VectorGraphicsEditor")
+set(CPACK_NSIS_INSTALL_ROOT "$PROGRAMFILES64")
+
+include(CPack)

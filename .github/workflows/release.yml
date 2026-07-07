@@ -1,15 +1,12 @@
 name: Release
 
 on:
-  workflow_run:
-    workflows:
-      - CI
-    types:
-      - completed
+  push:
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag, for example v1.0.0"
+        description: 'Release tag (e.g. v1.0.0)'
         required: true
         type: string
 
@@ -17,60 +14,58 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.event.workflow_run.head_sha || inputs.tag }}
+  group: release-${{ github.ref_name || inputs.tag }}
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Windows Release
-    runs-on: windows-latest
-
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      (
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.event == 'push'
-      )
-
-    defaults:
-      run:
-        shell: msys2 {0}
-
-    env:
-      QT_QPA_PLATFORM: offscreen
-
+  # ======================================================================
+  #  Resolve the tag (manual dispatch or tag push)
+  # ======================================================================
+  resolve-tag:
+    name: Resolve tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
     steps:
-      - name: Checkout release commit
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha || inputs.tag }}
           fetch-depth: 0
+          fetch-tags: true
 
       - name: Resolve release tag
-        id: version
-        shell: bash
+        id: tag
         run: |
-          git fetch --tags --force
-
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             TAG="${{ inputs.tag }}"
           else
-            SHA="${{ github.event.workflow_run.head_sha }}"
-            TAG="$(git tag --points-at "$SHA" | grep -E '^v[0-9]+(\.[0-9]+)*([.-][A-Za-z0-9._-]+)?$' | head -n 1 || true)"
+            TAG="${{ github.ref_name }}"
           fi
-
-          if [ -z "$TAG" ]; then
-            echo "No release tag points at this CI-passed commit. Skipping release."
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "Release tag: $TAG"
+          # Strip leading 'v' for CPack / package naming
+          VERSION="${TAG#v}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "should_release=true" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Resolved tag=$TAG version=$VERSION"
+
+  # ======================================================================
+  #  Windows AMD64 — portable ZIP + NSIS installer
+  # ======================================================================
+  windows-amd64:
+    name: Windows AMD64
+    needs: resolve-tag
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    env:
+      TAG: ${{ needs.resolve-tag.outputs.tag }}
+      VERSION: ${{ needs.resolve-tag.outputs.version }}
+      QT_QPA_PLATFORM: offscreen
+
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Setup MSYS2 UCRT64
-        if: steps.version.outputs.should_release == 'true'
         uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
@@ -80,99 +75,418 @@ jobs:
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-qt6-base
-            mingw-w64-ucrt-x86_64-clang-tools-extra
+            mingw-w64-ucrt-x86_64-nsis
 
-      - name: Diagnose toolchain
-        if: steps.version.outputs.should_release == 'true'
-        run: |
-          echo "MSYSTEM=$MSYSTEM"
-          echo "MINGW_PREFIX=$MINGW_PREFIX"
-          which g++
-          g++ --version
-          which cmake
-          cmake --version
-          which ninja
-          ninja --version
-
-      - name: Configure Release build
-        if: steps.version.outputs.should_release == 'true'
+      - name: Build Release
         run: >
-          cmake -S . -B out/build/windows-release-ci -G Ninja
+          cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_CXX_COMPILER=g++
           -DCMAKE_PREFIX_PATH="$MINGW_PREFIX"
           -DBUILD_TESTING=ON
           -DVECTOR_GRAPHICS_EDITOR_ENABLE_WARNINGS=ON
           -DVECTOR_GRAPHICS_EDITOR_ENABLE_CLANG_TIDY=OFF
+          -DAPP_VERSION="${VERSION}"
+          &&
+          cmake --build build
+          &&
+          ctest --test-dir build --output-on-failure
 
-      - name: Build Release
-        if: steps.version.outputs.should_release == 'true'
-        run: cmake --build out/build/windows-release-ci
-
-      - name: Test Release
-        if: steps.version.outputs.should_release == 'true'
-        run: ctest --test-dir out/build/windows-release-ci --output-on-failure
-
-      - name: Stage application
-        if: steps.version.outputs.should_release == 'true'
+      - name: Stage portable (windeployqt)
         run: |
-          mkdir -p dist/VectorGraphicsEditor
+          mkdir -p dist/portable
+          EXE="$(find build -name VectorGraphicsEditor.exe -type f | head -1)"
+          cp "$EXE" dist/portable/
 
-          EXE_PATH="$(find out/build/windows-release-ci -name 'VectorGraphicsEditor.exe' -type f | head -n 1)"
-
-          if [ -z "$EXE_PATH" ]; then
-            echo "VectorGraphicsEditor.exe not found."
-            find out/build/windows-release-ci -maxdepth 4 -type f
-            exit 1
-          fi
-
-          echo "Found executable: $EXE_PATH"
-          cp "$EXE_PATH" dist/VectorGraphicsEditor/
-
-          if command -v windeployqt >/dev/null 2>&1; then
-            DEPLOYQT=windeployqt
-          elif command -v windeployqt6 >/dev/null 2>&1; then
-            DEPLOYQT=windeployqt6
-          else
-            echo "windeployqt not found."
-            exit 1
-          fi
-
-          "$DEPLOYQT" --release --compiler-runtime --dir dist/VectorGraphicsEditor dist/VectorGraphicsEditor/VectorGraphicsEditor.exe
+          DEPLOYQT="$(which windeployqt 2>/dev/null || which windeployqt6)"
+          "$DEPLOYQT" --release --compiler-runtime --dir dist/portable dist/portable/VectorGraphicsEditor.exe
 
           for dll in libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll; do
-            if [ -f "$MINGW_PREFIX/bin/$dll" ]; then
-              cp "$MINGW_PREFIX/bin/$dll" dist/VectorGraphicsEditor/
-            fi
+            [ -f "$MINGW_PREFIX/bin/$dll" ] && cp "$MINGW_PREFIX/bin/$dll" dist/portable/
           done
 
-          cp README.md dist/VectorGraphicsEditor/ || true
-          cp LICENSE dist/VectorGraphicsEditor/ || true
-
-      - name: Create ZIP package
-        if: steps.version.outputs.should_release == 'true'
+      - name: Package portable ZIP
         shell: pwsh
         run: |
           Compress-Archive `
-            -Path dist/VectorGraphicsEditor `
-            -DestinationPath dist/VectorGraphicsEditor-windows-ucrt64-${{ steps.version.outputs.tag }}.zip `
+            -Path dist/portable/* `
+            -DestinationPath "dist/VectorGraphicsEditor-$env:VERSION-windows-amd64-portable.zip" `
             -Force
 
-      - name: Upload package artifact
-        if: steps.version.outputs.should_release == 'true'
-        uses: actions/upload-artifact@v4
+      - name: Package NSIS installer
+        run: |
+          cd dist/portable
+          makensis -V4 -DAPP_VERSION="${VERSION}" \
+            -DOUTFILE="../VectorGraphicsEditor-${VERSION}-windows-amd64-installer.exe" \
+            "${GITHUB_WORKSPACE}/packaging/windows/installer.nsi"
+
+      - uses: actions/upload-artifact@v4
         with:
-          name: VectorGraphicsEditor-windows-ucrt64-${{ steps.version.outputs.tag }}
-          path: dist/VectorGraphicsEditor-windows-ucrt64-${{ steps.version.outputs.tag }}.zip
+          name: windows-amd64
+          path: |
+            dist/VectorGraphicsEditor-*-windows-amd64-portable.zip
+            dist/VectorGraphicsEditor-*-windows-amd64-installer.exe
           if-no-files-found: error
 
+  # ======================================================================
+  #  Windows ARM64 — portable ZIP + NSIS installer
+  #  Requires github-hosted windows-11-arm runner.
+  # ======================================================================
+  windows-arm64:
+    name: Windows ARM64
+    needs: resolve-tag
+    runs-on: windows-11-arm
+    defaults:
+      run:
+        shell: msys2 {0}
+    env:
+      TAG: ${{ needs.resolve-tag.outputs.tag }}
+      VERSION: ${{ needs.resolve-tag.outputs.version }}
+      QT_QPA_PLATFORM: offscreen
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSYS2 CLANGARM64
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANGARM64
+          update: true
+          install: >-
+            mingw-w64-clang-aarch64-clang
+            mingw-w64-clang-aarch64-cmake
+            mingw-w64-clang-aarch64-ninja
+            mingw-w64-clang-aarch64-qt6-base
+            mingw-w64-clang-aarch64-nsis
+
+      - name: Build Release
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_CXX_COMPILER=clang++
+          -DCMAKE_PREFIX_PATH="$MINGW_PREFIX"
+          -DBUILD_TESTING=ON
+          -DVECTOR_GRAPHICS_EDITOR_ENABLE_WARNINGS=ON
+          -DVECTOR_GRAPHICS_EDITOR_ENABLE_CLANG_TIDY=OFF
+          -DAPP_VERSION="${VERSION}"
+          &&
+          cmake --build build
+          &&
+          ctest --test-dir build --output-on-failure
+
+      - name: Stage portable (windeployqt)
+        run: |
+          mkdir -p dist/portable
+          EXE="$(find build -name VectorGraphicsEditor.exe -type f | head -1)"
+          cp "$EXE" dist/portable/
+          DEPLOYQT="$(which windeployqt 2>/dev/null || which windeployqt6)"
+          "$DEPLOYQT" --release --compiler-runtime --dir dist/portable dist/portable/VectorGraphicsEditor.exe
+          for dll in libc++.dll libunwind.dll; do
+            [ -f "$MINGW_PREFIX/bin/$dll" ] && cp "$MINGW_PREFIX/bin/$dll" dist/portable/
+          done
+
+      - name: Package portable ZIP
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path dist/portable/* `
+            -DestinationPath "dist/VectorGraphicsEditor-$env:VERSION-windows-arm64-portable.zip" `
+            -Force
+
+      - name: Package NSIS installer
+        run: |
+          cd dist/portable
+          makensis -V4 -DAPP_VERSION="${VERSION}" \
+            -DOUTFILE="../VectorGraphicsEditor-${VERSION}-windows-arm64-installer.exe" \
+            "${GITHUB_WORKSPACE}/packaging/windows/installer.nsi"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-arm64
+          path: |
+            dist/VectorGraphicsEditor-*-windows-arm64-portable.zip
+            dist/VectorGraphicsEditor-*-windows-arm64-installer.exe
+          if-no-files-found: error
+
+  # ======================================================================
+  #  macOS Intel (x86_64)
+  # ======================================================================
+  macos-x86_64:
+    name: macOS Intel
+    needs: resolve-tag
+    runs-on: macos-13
+    env:
+      TAG: ${{ needs.resolve-tag.outputs.tag }}
+      VERSION: ${{ needs.resolve-tag.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install qt cmake ninja create-dmg
+
+      - name: Build Release
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$(brew --prefix qt)" \
+            -DBUILD_TESTING=ON \
+            -DVECTOR_GRAPHICS_EDITOR_ENABLE_WARNINGS=ON \
+            -DVECTOR_GRAPHICS_EDITOR_ENABLE_CLANG_TIDY=OFF \
+            -DAPP_VERSION="${VERSION}"
+          cmake --build build
+          ctest --test-dir build --output-on-failure
+
+      - name: Deploy Qt frameworks
+        run: |
+          APP="$(find build -name VectorGraphicsEditor.app -type d | head -1)"
+          macdeployqt "$APP" -verbose=1
+          # Remove useless headers to shrink bundle
+          find "$APP/Contents" -name '*.h' -delete 2>/dev/null || true
+
+      - name: Create DMG
+        run: |
+          APP="$(find build -name VectorGraphicsEditor.app -type d | head -1)"
+          DMG="VectorGraphicsEditor-${VERSION}-macos-x86_64.dmg"
+          create-dmg \
+            --volname "VectorGraphicsEditor" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "VectorGraphicsEditor.app" 150 190 \
+            --hide-extension "VectorGraphicsEditor.app" \
+            --app-drop-link 450 190 \
+            "$DMG" "$APP"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-x86_64
+          path: VectorGraphicsEditor-*-macos-x86_64.dmg
+          if-no-files-found: error
+
+  # ======================================================================
+  #  macOS Apple Silicon (ARM64)
+  # ======================================================================
+  macos-arm64:
+    name: macOS Apple Silicon
+    needs: resolve-tag
+    runs-on: macos-latest
+    env:
+      TAG: ${{ needs.resolve-tag.outputs.tag }}
+      VERSION: ${{ needs.resolve-tag.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install qt cmake ninja create-dmg
+
+      - name: Build Release
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$(brew --prefix qt)" \
+            -DBUILD_TESTING=ON \
+            -DVECTOR_GRAPHICS_EDITOR_ENABLE_WARNINGS=ON \
+            -DVECTOR_GRAPHICS_EDITOR_ENABLE_CLANG_TIDY=OFF \
+            -DAPP_VERSION="${VERSION}"
+          cmake --build build
+          ctest --test-dir build --output-on-failure
+
+      - name: Deploy Qt frameworks
+        run: |
+          APP="$(find build -name VectorGraphicsEditor.app -type d | head -1)"
+          macdeployqt "$APP" -verbose=1
+          find "$APP/Contents" -name '*.h' -delete 2>/dev/null || true
+
+      - name: Create DMG
+        run: |
+          APP="$(find build -name VectorGraphicsEditor.app -type d | head -1)"
+          DMG="VectorGraphicsEditor-${VERSION}-macos-arm64.dmg"
+          create-dmg \
+            --volname "VectorGraphicsEditor" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "VectorGraphicsEditor.app" 150 190 \
+            --hide-extension "VectorGraphicsEditor.app" \
+            --app-drop-link 450 190 \
+            "$DMG" "$APP"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64
+          path: VectorGraphicsEditor-*-macos-arm64.dmg
+          if-no-files-found: error
+
+  # ======================================================================
+  #  Linux — Debian/Ubuntu (.deb)
+  # ======================================================================
+  linux-deb:
+    name: Linux Debian (.deb)
+    needs: resolve-tag
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.resolve-tag.outputs.tag }}
+      VERSION: ${{ needs.resolve-tag.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential cmake ninja-build qt6-base-dev
+
+      - name: Build Release
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr \
+            -DBUILD_TESTING=ON \
+            -DVECTOR_GRAPHICS_EDITOR_ENABLE_WARNINGS=ON \
+            -DVECTOR_GRAPHICS_EDITOR_ENABLE_CLANG_TIDY=OFF \
+            -DAPP_VERSION="${VERSION}"
+          cmake --build build
+          ctest --test-dir build --output-on-failure
+
+      - name: Create .deb package
+        run: |
+          cd build
+          cpack -G DEB \
+            -D APP_VERSION="${VERSION}" \
+            -D CPACK_DEBIAN_PACKAGE_MAINTAINER="CourseProject"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-deb
+          path: build/VectorGraphicsEditor-*.deb
+          if-no-files-found: error
+
+  # ======================================================================
+  #  Linux — Fedora / RHEL (.rpm)
+  # ======================================================================
+  linux-rpm:
+    name: Linux Red Hat (.rpm)
+    needs: resolve-tag
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    env:
+      TAG: ${{ needs.resolve-tag.outputs.tag }}
+      VERSION: ${{ needs.resolve-tag.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          dnf install -y cmake ninja-build gcc-c++ qt6-qtbase-devel rpm-build
+
+      - name: Build Release
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr \
+            -DBUILD_TESTING=ON \
+            -DVECTOR_GRAPHICS_EDITOR_ENABLE_WARNINGS=ON \
+            -DVECTOR_GRAPHICS_EDITOR_ENABLE_CLANG_TIDY=OFF \
+            -DAPP_VERSION="${VERSION}"
+          cmake --build build
+          ctest --test-dir build --output-on-failure
+
+      - name: Create .rpm package
+        run: |
+          cd build
+          cpack -G RPM \
+            -D APP_VERSION="${VERSION}" \
+            -D CPACK_RPM_PACKAGE_LICENSE="MIT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-rpm
+          path: build/VectorGraphicsEditor-*.rpm
+          if-no-files-found: error
+
+  # ======================================================================
+  #  Linux — Arch (.pkg.tar.zst)
+  # ======================================================================
+  linux-arch:
+    name: Linux Arch (.pkg.tar.zst)
+    needs: resolve-tag
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    env:
+      TAG: ${{ needs.resolve-tag.outputs.tag }}
+      VERSION: ${{ needs.resolve-tag.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm cmake ninja gcc qt6-base
+
+      - name: Build Release
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr \
+            -DBUILD_TESTING=ON \
+            -DVECTOR_GRAPHICS_EDITOR_ENABLE_WARNINGS=ON \
+            -DVECTOR_GRAPHICS_EDITOR_ENABLE_CLANG_TIDY=OFF \
+            -DAPP_VERSION="${VERSION}"
+          cmake --build build
+          ctest --test-dir build --output-on-failure
+
+      - name: Create Arch package (tar.zst)
+        run: |
+          DESTDIR="$PWD/pkg" cmake --install build
+          cd pkg
+          tar -caf "../VectorGraphicsEditor-${VERSION}-linux-x86_64.pkg.tar.zst" \
+            --zstd \
+            --owner=0 --group=0 \
+            .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-arch
+          path: VectorGraphicsEditor-*-linux-x86_64.pkg.tar.zst
+          if-no-files-found: error
+
+  # ======================================================================
+  #  Create GitHub Release with all artifacts
+  # ======================================================================
+  github-release:
+    name: Create GitHub Release
+    needs:
+      - resolve-tag
+      - windows-amd64
+      - windows-arm64
+      - macos-x86_64
+      - macos-arm64
+      - linux-deb
+      - linux-rpm
+      - linux-arch
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.resolve-tag.outputs.tag }}
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -la artifacts/
+
       - name: Create GitHub Release
-        if: steps.version.outputs.should_release == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: VectorGraphicsEditor ${{ steps.version.outputs.tag }}
+          tag_name: ${{ env.TAG }}
+          name: VectorGraphicsEditor ${{ env.TAG }}
           draft: false
-          prerelease: ${{ contains(steps.version.outputs.tag, '-') }}
-          files: |
-            dist/VectorGraphicsEditor-windows-ucrt64-${{ steps.version.outputs.tag }}.zip
+          prerelease: ${{ contains(env.TAG, '-') }}
+          files: artifacts/*
+          fail_on_unmatched_files: true
