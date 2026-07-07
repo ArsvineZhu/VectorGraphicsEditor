@@ -182,7 +182,7 @@ jobs:
             [ -f "$MINGW_PREFIX/bin/$dll" ] && cp "$MINGW_PREFIX/bin/$dll" dist/portable/
           done
           for pat in libfreetype* libpng16* libmd4c* libharfbuzz*; do
-            for dll in "$MINGW_PREFIX/bin/$pat"; do
+            for dll in "$MINGW_PREFIX"/bin/$pat; do
               [ -f "$dll" ] && cp "$dll" dist/portable/
             done
           done
@@ -248,37 +248,57 @@ jobs:
             exit 1
           fi
           echo "App bundle: $APP"
-          ls -la "$APP/Contents/MacOS/"
+          ls -R "$APP/Contents/MacOS/"
 
           QT_DIR="$(brew --prefix qt)"
           echo "Qt prefix: $QT_DIR"
-          echo "Qt libs:"
           ls "$QT_DIR"/lib/Qt*.framework 2>/dev/null || ls "$QT_DIR"/lib/libQt*.dylib 2>/dev/null || true
 
-          mkdir -p "$APP/Contents/Frameworks"
           exe="$APP/Contents/MacOS/VectorGraphicsEditor"
+          FW_DST="$APP/Contents/Frameworks"
+          mkdir -p "$FW_DST"
 
+          # Copy Qt frameworks from brew
           for lib in QtCore QtGui QtWidgets QtDBus; do
             FW="$QT_DIR/lib/${lib}.framework"
             if [ -d "$FW" ]; then
-              echo "Copying framework: $lib ($FW)"
-              cp -R "$FW" "$APP/Contents/Frameworks/"
-              install_name_tool -change "$FW/Versions/A/$lib" \
-                "@executable_path/../Frameworks/${lib}.framework/Versions/A/$lib" \
-                "$exe" 2>/dev/null || true
+              echo "Copying framework: $lib"
+              cp -R "$FW" "$FW_DST/"
             elif [ -f "$QT_DIR/lib/lib${lib}.dylib" ]; then
               echo "Copying dylib: lib${lib}.dylib"
-              cp "$QT_DIR/lib/lib${lib}.dylib" "$APP/Contents/Frameworks/"
-              install_name_tool -change "$QT_DIR/lib/lib${lib}.dylib" \
-                "@executable_path/../Frameworks/lib${lib}.dylib" "$exe"
+              cp "$QT_DIR/lib/lib${lib}.dylib" "$FW_DST/"
             else
               echo "WARNING: $lib not found at expected paths"
             fi
           done
 
-          echo "Frameworks after deploy:"
-          ls "$APP/Contents/Frameworks/"
+          echo "Frameworks after copy:"
+          ls "$FW_DST/"
 
+          # Rewrite binary's Qt load commands — use otool -L to find
+          # the actual install names (brew uses Cellar paths, not /opt symlinks)
+          while IFS= read -r line; do
+            old=$(echo "$line" | awk '{print $1}')
+            case "$old" in
+              */Qt*.framework/*)
+                # e.g. /opt/homebrew/Cellar/qt/6.x/lib/QtCore.framework/Versions/A/QtCore
+                fw=$(echo "$old" | grep -oE 'Qt[^/]*\.framework')
+                base=$(basename "$old")
+                new="@executable_path/../Frameworks/$fw/Versions/A/$base"
+                echo "  change $old -> $new"
+                install_name_tool -change "$old" "$new" "$exe"
+                ;;
+              */libQt*.dylib)
+                new="@executable_path/../Frameworks/$(basename "$old")"
+                echo "  change $old -> $new"
+                install_name_tool -change "$old" "$new" "$exe"
+                ;;
+            esac
+          done < <(otool -L "$exe" | tail -n +2)
+
+          install_name_tool -add_rpath "@executable_path/../Frameworks" "$exe"
+
+          # Copy platform plugins
           mkdir -p "$APP/Contents/PlugIns/platforms"
           for pf in "$QT_DIR"/plugins/platforms/libq*.dylib; do
             [ -f "$pf" ] && cp "$pf" "$APP/Contents/PlugIns/platforms/"
@@ -286,11 +306,10 @@ jobs:
           echo "Platforms after deploy:"
           ls "$APP/Contents/PlugIns/platforms/"
 
-          install_name_tool -add_rpath "@executable_path/../Frameworks" "$exe" 2>/dev/null || true
           find "$APP/Contents" -name '*.h' -delete 2>/dev/null || true
 
-          echo "otool -L:"
-          otool -L "$exe" || true
+          echo "=== Final binary dependencies ==="
+          otool -L "$exe"
 
       - name: Create DMG
         run: |
