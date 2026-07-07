@@ -77,7 +77,13 @@ add_library(vector_graphics_editor_core STATIC ${VECTOR_GRAPHICS_EDITOR_CORE_SOU
 target_include_directories(vector_graphics_editor_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(vector_graphics_editor_core PUBLIC Qt6::Core Qt6::Gui vector_graphics_editor_warnings)
 
-add_executable(VectorGraphicsEditor WIN32 ${VECTOR_GRAPHICS_EDITOR_APP_SOURCES})
+add_executable(VectorGraphicsEditor WIN32 MACOSX_BUNDLE ${VECTOR_GRAPHICS_EDITOR_APP_SOURCES})
+set_target_properties(VectorGraphicsEditor PROPERTIES
+  MACOSX_BUNDLE_BUNDLE_NAME "VectorGraphicsEditor"
+  MACOSX_BUNDLE_GUI_IDENTIFIER "com.vector.graphics.editor"
+  MACOSX_BUNDLE_BUNDLE_VERSION "${APP_VERSION}"
+  MACOSX_BUNDLE_SHORT_VERSION_STRING "${APP_VERSION}"
+)
 target_include_directories(VectorGraphicsEditor PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(VectorGraphicsEditor PRIVATE vector_graphics_editor_core Qt6::Widgets vector_graphics_editor_warnings)
 
