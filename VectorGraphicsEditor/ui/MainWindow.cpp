@@ -64,6 +64,11 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     statusBar()->showMessage(i18n::tr(m_language, "status.ready", "Ready", "就绪"));
 }
 
+MainWindow::~MainWindow() {
+    disconnect(m_canvasView, nullptr, this, nullptr);
+    disconnect(m_canvasView, nullptr, m_propertyPanel, nullptr);
+}
+
 AppLanguage MainWindow::loadLanguage() const {
     const QSettings settings;
     return appLanguageFromSettingsValue(settings.value("ui/language", appLanguageToSettingsValue(kDefaultLanguage)).toString());

@@ -140,6 +140,7 @@ QPainterPath ShapeItem::buildBasePath() const {
             }
         } else if (m_data.points.size() >= 3) {
             path.addPolygon(QPolygonF(m_data.points));
+            path.closeSubpath();
         }
         break;
     }

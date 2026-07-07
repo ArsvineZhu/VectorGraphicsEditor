@@ -38,6 +38,7 @@ class MainWindow : public QMainWindow {
   public:
     /// @brief 构造。完成 UI / Action / 工具栏 / 菜单 / 信号连接 + 应用持久化语言。
     explicit MainWindow(QWidget* parent = nullptr);
+    ~MainWindow() override;
 
   private:
     /// @brief 从 QSettings 读取上次保存的语言；缺失则默认简体中文。

@@ -159,7 +159,6 @@ void CanvasView::mouseDoubleClickEvent(QMouseEvent* event) {
 void CanvasView::keyPressEvent(QKeyEvent* event) {
     if ((event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter)) {
         if (ICreationStrategy* strategy = activePathStrategy(); strategy != nullptr && strategy->inProgress()) {
-            // PathCreationStrategy 约定：传入 NaN 作为“无额外末点，仅结束当前路径”。
             const qreal nan = std::numeric_limits<qreal>::quiet_NaN();
             strategy->finish(QPointF(nan, nan));
             return;

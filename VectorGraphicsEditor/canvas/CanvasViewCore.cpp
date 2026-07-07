@@ -88,7 +88,11 @@ CanvasView::CanvasView(QWidget* parent) : QGraphicsView(parent), m_scene(new QGr
     m_polygonStrategy = std::make_unique<PathCreationStrategy>(ShapeType::Polygon, creationContext);
 }
 
-CanvasView::~CanvasView() = default;
+CanvasView::~CanvasView() {
+    if (m_scene != nullptr) {
+        disconnect(m_scene, nullptr, this, nullptr);
+    }
+}
 
 /// @brief 切换当前语言；后续状态栏与错误消息均按该语言生成。
 void CanvasView::setLanguage(AppLanguage language) { m_language = language; }
