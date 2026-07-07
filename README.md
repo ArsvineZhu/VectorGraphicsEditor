@@ -37,8 +37,7 @@ open ./out/build/darwin-debug/VectorGraphicsEditor.app
 | 平台 | 架构 | 打包格式 |
 |------|------|---------|
 | Windows | AMD64 (x86_64) | 便携版 ZIP / NSIS 安装包 (`.exe`) |
-| Windows | ARM64 | 便携版 ZIP / NSIS 安装包 (`.exe`) |
-| macOS | Intel (x86_64) | DMG (`.dmg`) |
+| Windows | ARM64 | 便携版 ZIP (`.zip`) |
 | macOS | Apple Silicon (ARM64) | DMG (`.dmg`) |
 | Linux | AMD64 (x86_64) | Debian (`.deb`) / Red Hat (`.rpm`) / Arch (`.pkg.tar.zst`) |
 

@@ -128,8 +128,7 @@ jobs:
           if-no-files-found: error
 
   # ======================================================================
-  #  Windows ARM64 — portable ZIP + NSIS installer
-  #  MSYS2 CLANGARM64 没有 NSIS 包，从官方二进制发行版下载。
+  #  Windows ARM64 — portable ZIP only
   # ======================================================================
   windows-arm64:
     name: Windows ARM64
@@ -183,23 +182,6 @@ jobs:
             [ -f "$MINGW_PREFIX/bin/$dll" ] && cp "$MINGW_PREFIX/bin/$dll" dist/portable/
           done
 
-      - name: Download NSIS (binary release)
-        shell: pwsh
-        run: |
-          $nsisUrl = "https://downloads.sourceforge.net/project/nsis/NSIS%203/3.10/nsis-3.10.zip"
-          try {
-            Invoke-WebRequest -Uri $nsisUrl -OutFile nsis.zip -MaximumRedirection 5
-          } catch {
-            Write-Host "Primary URL failed, trying mirror..."
-            Invoke-WebRequest -Uri "https://sourceforge.net/projects/nsis/files/NSIS%203/3.10/nsis-3.10.zip/download" -OutFile nsis.zip -MaximumRedirection 5
-          }
-          Expand-Archive nsis.zip -DestinationPath .
-          if (!(Test-Path "nsis-3.10\makensis.exe")) {
-            Write-Error "NSIS download failed: makensis.exe not found"
-            exit 1
-          }
-          echo "NSIS_HOME=$PWD\nsis-3.10" >> $env:GITHUB_ENV
-
       - name: Package portable ZIP
         shell: pwsh
         run: |
@@ -208,79 +190,10 @@ jobs:
             -DestinationPath "dist/VectorGraphicsEditor-$env:VERSION-windows-arm64-portable.zip" `
             -Force
 
-      - name: Package NSIS installer
-        shell: pwsh
-        run: |
-          copy packaging\windows\installer.nsi dist\portable\
-          cd dist\portable
-          & "$env:NSIS_HOME\makensis.exe" -V4 -DAPP_VERSION="$env:VERSION" `
-            -DOUTFILE="VectorGraphicsEditor-$env:VERSION-windows-arm64-installer.exe" `
-            installer.nsi
-          move "VectorGraphicsEditor-$env:VERSION-windows-arm64-installer.exe" ..
-          cd ..\..
-
       - uses: actions/upload-artifact@v4
         with:
           name: windows-arm64
-          path: |
-            dist/VectorGraphicsEditor-*-windows-arm64-portable.zip
-            dist/VectorGraphicsEditor-*-windows-arm64-installer.exe
-          if-no-files-found: error
-
-  # ======================================================================
-  #  macOS Intel (x86_64)
-  # ======================================================================
-  macos-x86_64:
-    name: macOS Intel
-    needs: resolve-tag
-    runs-on: macos-13
-    env:
-      TAG: ${{ needs.resolve-tag.outputs.tag }}
-      VERSION: ${{ needs.resolve-tag.outputs.version }}
-      QT_QPA_PLATFORM: offscreen
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: brew install qt cmake ninja create-dmg
-
-      - name: Build Release
-        run: |
-          cmake -S . -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="$(brew --prefix qt)" \
-            -DBUILD_TESTING=ON \
-            -DVECTOR_GRAPHICS_EDITOR_ENABLE_WARNINGS=ON \
-            -DVECTOR_GRAPHICS_EDITOR_ENABLE_CLANG_TIDY=OFF \
-            -DAPP_VERSION="${VERSION}"
-          cmake --build build
-          ctest --test-dir build --output-on-failure
-
-      - name: Deploy Qt frameworks
-        run: |
-          APP="$(find build -name VectorGraphicsEditor.app -type d | head -1)"
-          macdeployqt "$APP" -codesign=-
-          find "$APP/Contents" -name '*.h' -delete 2>/dev/null || true
-
-      - name: Create DMG
-        run: |
-          APP="$(find build -name VectorGraphicsEditor.app -type d | head -1)"
-          DMG="VectorGraphicsEditor-${VERSION}-macos-x86_64.dmg"
-          create-dmg \
-            --volname "VectorGraphicsEditor" \
-            --window-pos 200 120 \
-            --window-size 600 400 \
-            --icon-size 100 \
-            --icon "VectorGraphicsEditor.app" 150 190 \
-            --hide-extension "VectorGraphicsEditor.app" \
-            --app-drop-link 450 190 \
-            "$DMG" "$APP"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos-x86_64
-          path: VectorGraphicsEditor-*-macos-x86_64.dmg
+          path: dist/VectorGraphicsEditor-*-windows-arm64-portable.zip
           if-no-files-found: error
 
   # ======================================================================
@@ -316,7 +229,25 @@ jobs:
       - name: Deploy Qt frameworks
         run: |
           APP="$(find build -name VectorGraphicsEditor.app -type d | head -1)"
-          macdeployqt "$APP" -codesign=-
+          QT_DIR="$(brew --prefix qt)"
+          # Create Frameworks dir and copy Qt libraries manually
+          mkdir -p "$APP/Contents/Frameworks"
+          for lib in QtCore QtGui QtWidgets QtDBus; do
+            if [ -f "$QT_DIR/lib/${lib}.framework/${lib}" ]; then
+              cp -R "$QT_DIR/lib/${lib}.framework" "$APP/Contents/Frameworks/"
+            elif [ -f "$QT_DIR/lib/lib${lib}.dylib" ]; then
+              cp "$QT_DIR/lib/lib${lib}.dylib" "$APP/Contents/Frameworks/"
+              install_name_tool -change "$QT_DIR/lib/lib${lib}.dylib" \
+                "@executable_path/../Frameworks/lib${lib}.dylib" \
+                "$APP/Contents/MacOS/VectorGraphicsEditor"
+            fi
+          done
+          # Copy platform plugin
+          mkdir -p "$APP/Contents/PlugIns/platforms"
+          cp "$QT_DIR/plugins/platforms/libqcocoa.dylib" "$APP/Contents/PlugIns/platforms/" 2>/dev/null || true
+          # Install name fix for the main binary
+          install_name_tool -add_rpath "@executable_path/../Frameworks" \
+            "$APP/Contents/MacOS/VectorGraphicsEditor" 2>/dev/null || true
           find "$APP/Contents" -name '*.h' -delete 2>/dev/null || true
 
       - name: Create DMG
@@ -486,7 +417,6 @@ jobs:
       - resolve-tag
       - windows-amd64
       - windows-arm64
-      - macos-x86_64
       - macos-arm64
       - linux-deb
       - linux-rpm
