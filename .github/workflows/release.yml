@@ -181,6 +181,11 @@ jobs:
           for dll in libc++.dll libunwind.dll; do
             [ -f "$MINGW_PREFIX/bin/$dll" ] && cp "$MINGW_PREFIX/bin/$dll" dist/portable/
           done
+          for pat in libfreetype* libpng16* libmd4c* libharfbuzz*; do
+            for dll in "$MINGW_PREFIX/bin/$pat"; do
+              [ -f "$dll" ] && cp "$dll" dist/portable/
+            done
+          done
 
       - name: Package portable ZIP
         shell: pwsh
@@ -235,31 +240,57 @@ jobs:
         env:
           HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
         run: |
+          set -euo pipefail
+
           APP="$(find build -name VectorGraphicsEditor.app -type d | head -1)"
-          QT_DIR="$(brew --prefix qt)"
-          if [ -z "$QT_DIR" ] || [ ! -d "$QT_DIR" ]; then
-            echo "ERROR: Could not determine Qt prefix. brew --prefix qt returned: '$QT_DIR'"
+          if [ -z "$APP" ]; then
+            echo "ERROR: VectorGraphicsEditor.app not found under build/"
             exit 1
           fi
-          # Create Frameworks dir and copy Qt libraries manually
+          echo "App bundle: $APP"
+          ls -la "$APP/Contents/MacOS/"
+
+          QT_DIR="$(brew --prefix qt)"
+          echo "Qt prefix: $QT_DIR"
+          echo "Qt libs:"
+          ls "$QT_DIR"/lib/Qt*.framework 2>/dev/null || ls "$QT_DIR"/lib/libQt*.dylib 2>/dev/null || true
+
           mkdir -p "$APP/Contents/Frameworks"
+          exe="$APP/Contents/MacOS/VectorGraphicsEditor"
+
           for lib in QtCore QtGui QtWidgets QtDBus; do
-            if [ -f "$QT_DIR/lib/${lib}.framework/${lib}" ]; then
-              cp -R "$QT_DIR/lib/${lib}.framework" "$APP/Contents/Frameworks/"
+            FW="$QT_DIR/lib/${lib}.framework"
+            if [ -d "$FW" ]; then
+              echo "Copying framework: $lib ($FW)"
+              cp -R "$FW" "$APP/Contents/Frameworks/"
+              install_name_tool -change "$FW/Versions/A/$lib" \
+                "@executable_path/../Frameworks/${lib}.framework/Versions/A/$lib" \
+                "$exe" 2>/dev/null || true
             elif [ -f "$QT_DIR/lib/lib${lib}.dylib" ]; then
+              echo "Copying dylib: lib${lib}.dylib"
               cp "$QT_DIR/lib/lib${lib}.dylib" "$APP/Contents/Frameworks/"
               install_name_tool -change "$QT_DIR/lib/lib${lib}.dylib" \
-                "@executable_path/../Frameworks/lib${lib}.dylib" \
-                "$APP/Contents/MacOS/VectorGraphicsEditor"
+                "@executable_path/../Frameworks/lib${lib}.dylib" "$exe"
+            else
+              echo "WARNING: $lib not found at expected paths"
             fi
           done
-          # Copy platform plugin
+
+          echo "Frameworks after deploy:"
+          ls "$APP/Contents/Frameworks/"
+
           mkdir -p "$APP/Contents/PlugIns/platforms"
-          cp "$QT_DIR/plugins/platforms/libqcocoa.dylib" "$APP/Contents/PlugIns/platforms/" 2>/dev/null || true
-          # Install name fix for the main binary
-          install_name_tool -add_rpath "@executable_path/../Frameworks" \
-            "$APP/Contents/MacOS/VectorGraphicsEditor" 2>/dev/null || true
+          for pf in "$QT_DIR"/plugins/platforms/libq*.dylib; do
+            [ -f "$pf" ] && cp "$pf" "$APP/Contents/PlugIns/platforms/"
+          done
+          echo "Platforms after deploy:"
+          ls "$APP/Contents/PlugIns/platforms/"
+
+          install_name_tool -add_rpath "@executable_path/../Frameworks" "$exe" 2>/dev/null || true
           find "$APP/Contents" -name '*.h' -delete 2>/dev/null || true
+
+          echo "otool -L:"
+          otool -L "$exe" || true
 
       - name: Create DMG
         run: |
