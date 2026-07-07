@@ -1,3 +1,15 @@
+// =====================================================================
+// DragCreationStrategy.cpp
+// ---------------------------------------------------------------------
+// @brief DragCreationStrategy 的实现
+// @details 拖拽创建策略的具体流程：
+//          - begin: 记录起点，创建预览 ShapeItem 并添加到 scene
+//          - update: 根据鼠标实时位置更新预览图形的几何
+//          - finish: 检查图形有效性（非退化），通过回调提交最终图形
+//          - cancel: 清理预览图元，重置状态
+// @layer   canvas
+// =====================================================================
+
 #include "canvas/DragCreationStrategy.h"
 
 #include <QGraphicsScene>

@@ -1,3 +1,15 @@
+// =====================================================================
+// DragCreationStrategy.h
+// ---------------------------------------------------------------------
+// @brief   拖拽创建策略实现（拖拽式图形创建）
+// @details 适用于 Line / Rectangle / Circle / Ellipse 四种图形的创建。
+//          用户在画布上按下为起点，拖拽预览，松开确认图形。内部维护一个
+//          preview ShapeItem 用于实时反馈。
+// @layer   canvas
+// @warning 本策略与 PathCreationStrategy 共同继承 ICreationStrategy；
+//          创建完成后预览图元会被清理，最终图形通过 context.addShape 提交。
+// =====================================================================
+
 #pragma once
 
 #include <functional>

@@ -1,3 +1,12 @@
+// =====================================================================
+// MultiShapeSession.cpp
+// ---------------------------------------------------------------------
+// @brief MultiShapeSession 的实现
+// @details begin() 时拍摄所有选中图形的完整数据快照；
+//          cancel() 时遍历 entries 将每个图形的数据恢复为 snapshot。
+// @layer   canvas
+// =====================================================================
+
 #include "canvas/MultiShapeSession.h"
 
 #include "graphics/ShapeItem.h"
